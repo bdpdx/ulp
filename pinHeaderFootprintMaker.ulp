@@ -1,0 +1,132 @@
+#usage "Pin Header Footprint Maker"
+
+#include "common.ulp"
+
+// all units in this file in mm
+
+string command = "";
+
+real gridMajorDivision = 0.5;
+real gridMinorDivision = 0.01;
+string gridUnit = "mm";
+
+real horizontalDistanceBetweenPadCenters = 2.54;
+real verticalDistanceBetweenPadCenters = 2.54;
+real padDrillDiameter = 1.02;
+real padDiameter = 2.0;
+
+int numberOfPadsHorizontally = 17;
+int numberOfPadsVertically = 2;
+
+void setup() {
+	sprintf(cmd, "grid lines on %s %0.02f 1 alt %0.02f %s", gridUnit, gridMajorDivision, gridMinorDivision, gridUnit);
+	addCommand(cmd);
+
+	addCommand("change font vector");
+	addCommand("change ratio 8");
+	addCommand("change shape round");
+	
+	change("drill", padDrillDiameter);
+	change("size", minimumTextHeight);
+	change("width", minimumLineWidth);
+
+	if (padDiameter > 0) {
+		change("diameter", padDiameter);
+	} else {
+		addCommand("change diameter auto");
+	}
+}
+
+void createFootprint() {
+	selectLayer(LAYER_TOP);
+	
+	real padsHeight = (numberOfPadsVertically - 1) * verticalDistanceBetweenPadCenters;
+	real padsWidth = (numberOfPadsHorizontally - 1) * horizontalDistanceBetweenPadCenters;
+	
+	real bottomLeftX = -padsWidth / 2;
+	real bottomLeftY = -padsHeight / 2;
+	real x;
+	real y;
+
+	int i;
+	int padNumber = 1;
+	
+	for (i = 0; i < numberOfPadsVertically; ++i) {
+		for (int j = 0; j < numberOfPadsHorizontally; ++j) {
+			x = bottomLeftX + j * horizontalDistanceBetweenPadCenters;
+			y = bottomLeftY + i * verticalDistanceBetweenPadCenters;
+			
+			sprintf(cmd, "pad 'p$%d' %s", padNumber++, point(x, y));
+			addCommand(cmd);
+		}
+	}
+
+	selectLayer(LAYER_TPLACE);
+	
+	real left = bottomLeftX - horizontalDistanceBetweenPadCenters / 2;
+	real top = bottomLeftY + padsHeight + verticalDistanceBetweenPadCenters / 2;
+	real right = -left;
+	real bottom = -top;
+	
+	drawRectangle(left, top, right, bottom, minimumLineWidth);
+	
+	selectLayer(LAYER_TKEEPOUT);
+	
+	real halfMinimumLineWidth = minimumLineWidth / 2;
+	
+	left -= halfMinimumLineWidth;
+	top += halfMinimumLineWidth;
+	right += halfMinimumLineWidth;
+	bottom -= halfMinimumLineWidth;
+	
+	drawRectangle(left, top, right, bottom, 0);
+
+	selectLayer(LAYER_TNAMES);
+	
+	addCommand("change align bottom-left");
+	
+	x = left - 0.2;
+	y = bottom;
+	
+	sprintf(cmd, "text '>NAME' R90 %s", point(x, y));
+	addCommand(cmd);
+	
+	y -= 0.2;
+
+	addCommand("change align center-right");
+	
+	for (i = 0; i < numberOfPadsHorizontally; ++i) {
+		x = bottomLeftX + i * horizontalDistanceBetweenPadCenters;
+		sprintf(cmd, "text '%d' R90 %s", i + 1, point(x, y));
+		addCommand(cmd);
+	}
+
+	y = -y;
+	x = left - 0.2;
+	addCommand("change align center-left");
+	
+	for (i = 0; i < numberOfPadsHorizontally; ++i) {
+		x = bottomLeftX + i * horizontalDistanceBetweenPadCenters;
+		sprintf(cmd, "text '%d' R90 %s", i + 1 + numberOfPadsHorizontally, point(x, y));
+		addCommand(cmd);
+	}
+
+	selectLayer(LAYER_TVALUES);
+
+	x = right + 0.2;
+	y = bottom;
+	
+	addCommand("change align top-left");
+	sprintf(cmd, "text '>VALUE' R90 %s", point(x, y));
+	addCommand(cmd);
+}
+
+int main() {
+	output("/tmp/ulp.log", "wt") {
+		setup();
+		createFootprint();
+		Exit();
+	}
+
+	return 0;
+}

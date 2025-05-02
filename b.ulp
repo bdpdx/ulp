@@ -1,0 +1,552 @@
+#usage "Fertigator V2 Placer ULP"
+
+// Stackup for this project:
+// Layer 1, Top, 5V
+// Layer 2, Route 2, GND
+// Layer 3, Route 3, 24VAC+
+// Layer 14, Route 14, 24VAC-
+// Layer 15, Route 15, GND
+// Layer 16, Bottom, 3.3V
+
+#include "boardArrangers.ulp"
+
+/*
+
+rip @	-- removes just polyons
+
+*/
+
+real esp32NotchHeight = 6;
+real esp32NotchWidth = 22;
+
+int scriptPhase = 1;
+
+void startPhase1() {
+// 	renumberPartsInSchematic(0);
+}
+
+void startPhase2() {
+// 	renumberPartsInSchematic(1);
+}
+
+void startPhase3() {
+	if (!board) addCommand("board");
+
+	addCommand("grid lines on mm 0.5 1 alt 0.01 mm");
+
+	showLayer(LAYER_DIMENSION);
+	showLayer(LAYER_TNAMES);
+	showLayer(LAYER_TVALUES);
+	
+	selectLayer(LAYER_TOP);
+}
+
+void startPhase4() {
+	addCommand("lock -*");
+	addCommand("ripup");	// delete all traces and vias
+	addCommand("ratsnest ! *");
+
+	// move all parts into off-board grid
+	string parts = allBoardElementNamesSeparatedByNewline();
+	movePartsToGrid(parts, 20, boardWidth + 45, boardHeight, 25, -25);
+	repositionParts(parts);
+	rotateParts(parts, 0);
+}
+
+void startPhase5() {
+	// set all name and value labels to minimumTextHeight and rotate components as needed
+	project.board(b) {
+		b.elements(e) {
+			e.texts(t) {
+				if (!(t.layer == LAYER_TNAMES || t.layer == LAYER_TVALUES)) continue;
+				
+				sprintf(cmd, "change size %0.03f %s", minimumTextHeight, point(u2mm(t.x), u2mm(t.y)));
+				addCommand(cmd);
+			}
+		}
+	}
+}
+
+void startPhase6() {
+	// hide values for various small parts
+	project.board(b) {
+		b.elements(e) {
+			string decodedName = decodeNameIntoPartPrefixAndIndexSuffix(e.name);
+			string nameParts[];
+			int partNumber = 0;
+			
+			if (strsplit(nameParts, decodedName, ',') == 2) {
+				partNumber = strtol(nameParts[1]);
+			}
+			
+			string prefix = nameParts[0];
+			
+			printf("e.name is %s, prefix is %s\n", e.name, prefix);
+			
+			int shouldHideValue = 0;
+			
+			if (!strcmp(prefix, "C")) shouldHideValue = 1;
+			else if (!strcmp(prefix, "D")) shouldHideValue = 1;
+			else if (!strcmp(prefix, "FB")) shouldHideValue = 1;
+			else if (!strcmp(prefix, "J")) {
+				if (partNumber == 2) shouldHideValue = 1;
+			}
+			else if (!strcmp(prefix, "LED")) shouldHideValue = 1;
+			else if (!strcmp(prefix, "Q")) shouldHideValue = 1;
+			else if (!strcmp(prefix, "R")) shouldHideValue = 1;
+			else if (!strcmp(prefix, "T")) shouldHideValue = 1;
+			else if (!strcmp(prefix, "U")) {
+				// MOC 3063 U11-U42
+				if (partNumber == 3) shouldHideValue = 1;
+				else if (partNumber == 5) shouldHideValue = 1;
+				else if (partNumber >= 6 && partNumber <= 10) shouldHideValue = 1;
+				else if (partNumber >= 11 && partNumber <= 42) shouldHideValue = 1;
+				else if (partNumber == 46) shouldHideValue = 1;
+			}
+			else if (!strcmp(prefix, "X")) shouldHideValue = 1;
+
+			if (!shouldHideValue) continue;
+		
+			e.texts(t) {
+				if (t.layer != LAYER_TVALUES) continue;
+
+				// "reposition 'name'" will restore the label visibility
+				sprintf(cmd, "change display off %s", u2mmPoint(t.x, t.y));
+				addCommand(cmd);
+			}
+		}
+	}
+}
+
+void startPhase7() {
+	real x = boardWidth / 2;
+	
+	// arrange terminal blocks
+	real halfTerminalBlockHeight = cuiDevicesTerminalBlockHeight / 2;
+	real terminalBlockWidth = cuiDevicesTerminalBlockWidth(27);
+	real lowerBlockY = minimumBoardEdgeMargin + halfTerminalBlockHeight;
+
+	move("J10", x, lowerBlockY);		// J9 is terminal block 1
+
+	real upperBlockY = lowerBlockY + ceilingTo(halfTerminalBlockHeight + 25.4, 0.5);
+
+	move("J9", x, upperBlockY);	// J10 is terminal block 2
+
+	// H1-4 are mounting holes
+	real y = ((upperBlockY - halfTerminalBlockHeight) + (lowerBlockY + halfTerminalBlockHeight)) / 2;
+
+	move("H1", mountingHoleInset, y);
+	move("H2", boardWidth - mountingHoleInset, y);
+	move("H3", boardWidth -	 esp32NotchWidth - mountingHoleInset - 14, boardHeight - mountingHoleInset);
+	move("H4", mountingHoleInset, boardHeight - mountingHoleInset);
+}
+
+void startPhase8() {
+	int numberOfSolenoids = 32;
+	int numberOfTerminals = 26;
+
+	// arrange indicator resistors
+// 	UL_ELEMENT lowerBlock = findBoardPartNamed("J10");
+//
+// 	real lowerBlockOriginX = u2mm(lowerBlock.x);
+// 	real lowerBlockBottomLeftX = lowerBlockOriginX - cuiDevicesTerminalBlockWidth(numberOfTerminals) / 2;
+// 	real lowerBlockOriginY = u2mm(lowerBlock.y);
+// 	real lowerBlockBottomLeftY = lowerBlockOriginY - halfTerminalBlockHeight;
+
+	// upper terminal block J9 contains ports for solenoids 1-26
+	UL_ELEMENT upperBlock = findBoardPartNamed("J9");
+
+	real halfTerminalBlockHeight = cuiDevicesTerminalBlockHeight / 2;
+	
+	// terminal block part origin is in the center of the part
+	real upperBlockOriginX = u2mm(upperBlock.x);
+	real upperBlockBottomLeftX = upperBlockOriginX - cuiDevicesTerminalBlockWidth(numberOfTerminals) / 2;
+	real upperBlockOriginY = u2mm(upperBlock.y);
+	real upperBlockBottomLeftY = upperBlockOriginY - halfTerminalBlockHeight;
+		
+	real x = upperBlockBottomLeftX + cuiDevicesTerminalBlockPin1OffsetX;
+	real y = upperBlockBottomLeftY + cuiDevicesTerminalBlockHeight + 6.5;
+   
+	int i;
+	int j;
+	int solenoidLED = 6;
+	int solenoidLEDResistor = 34;
+
+	string solenoidLEDNames = "";
+	string solenoidResistorNames = "";
+
+	// terminal block 1, solenoids 1-26
+	for (i = 0, j = 0; i < numberOfSolenoids;) {
+		string led, resistor;
+
+		sprintf(led, "LED%d", solenoidLED + j);
+		sprintf(resistor, "R%d", solenoidLEDResistor + j);
+
+		solenoidLEDNames += led + ",";
+		solenoidResistorNames += resistor + ",";
+
+		UL_ELEMENT e = findBoardPartNamed(led);
+
+		swap0402Label(led);
+		move(led, x, y);
+		rotate(led, 270);
+		move(resistor, x + 1.5, y);
+		rotate(resistor, 270);
+
+		// add gnd via for resistor
+		addVia("GND", x + 1.5, y + 2);
+
+		x += cuiDevicesTerminalBlockHorizontalDistanceBetweenPins;
+
+		if (++i == numberOfTerminals) {
+			x = upperBlockBottomLeftX + cuiDevicesTerminalBlockPin1OffsetX;
+			y -= 4;
+		}
+		if (++j % 4 == 0) {
+			j = 0;
+			solenoidLED += 4;
+			solenoidLEDResistor += 12;
+		}
+	}
+
+	string pumpLEDNames = "";
+	string pumpResistorNames = "";
+	
+	int numberOfPumps = 8;
+	int pumpLED = 38;
+	int pumpLEDResistor = 130;
+
+	for (i = 0, j = 0; i < numberOfPumps; ++i) {
+		string led, resistor;
+		
+		sprintf(led, "LED%d", pumpLED + j);
+		sprintf(resistor, "R%d", pumpLEDResistor + j);
+
+		pumpLEDNames += led + ",";
+		pumpResistorNames += resistor + ",";
+
+		swap0402Label(led);
+		move(led, x, y);
+		rotate(led, 270);
+		move(resistor, x + 1.5, y);
+		rotate(resistor, 270);
+
+		// add gnd via for resistor
+		addVia("GND", x + 1.5, y + 2);
+
+		x += 2 * cuiDevicesTerminalBlockHorizontalDistanceBetweenPins;
+		
+		if (++j % 4 == 0) {
+			j = 0;
+			pumpLED += 4;
+			pumpLEDResistor += 12;
+		}
+	}
+	
+//  If led or resistor part numbers change, print these into the log file to setup
+//  variables in phases 9 and 10
+// 	printf(solenoidLEDNames + "\n");
+// 	printf(solenoidResistorNames + "\n");
+// 	printf(pumpLEDNames + "\n");
+// 	printf(pumpResistorNames + "\n");
+}
+
+void startPhase9() {
+}
+
+void startPhase9old() {
+	// arrange indicator led + resistor labels part 1
+	// 2022.05.16 this is now handled in phase8()
+// 	string solenoidLEDNames = "LED6,LED7,LED8,LED9,LED10,LED11,LED12,LED13,LED14,LED15,LED16,LED17,LED18,LED19,LED20,LED21,LED22,LED23,LED24,LED25,LED26,LED27,LED28,LED29,LED30,LED31,LED32,LED33,LED34,LED35,LED36,LED37";
+// 	string solenoidResistorNames = "R34,R35,R36,R37,R46,R47,R48,R49,R58,R59,R60,R61,R70,R71,R72,R73,R82,R83,R84,R85,R94,R95,R96,R97,R106,R107,R108,R109,R118,R119,R120,R121"
+// 	string pumpLEDNames = "LED38,LED39,LED40,LED41,LED42,LED43,LED44,LED45";
+// 	string pumpResistorNames = "R130,R131,R132,R133,R142,R143,R144,R145";
+// 
+// 	string allParts = solenoidLEDNames + "," + solenoidResistorNames + "," + pumpLEDNames + "," + pumpResistorNames;
+// 	string parts[];
+// 	int i;
+// 	int n = strsplit(parts, allParts, ',');
+// 	
+// 	for (i = 0; i < n; ++i) {
+// 		UL_ELEMENT e = findBoardPartNamed(parts[i]);
+// 		
+// 		e.texts(t) {
+// 			if (t.layer == LAYER_TVALUES) {
+// 				// reposition 'name' will restore the label visibility
+// 				sprintf(cmd, "change display off %s", u2mmPoint(t.x, t.y));
+// 				addCommand(cmd);
+// 			}
+// 		}
+// 	}
+// 
+// 	string allParts = solenoidLEDNames + "," + pumpLEDNames;
+// 	string parts[];
+// 	int i;
+// 	int n = strsplit(parts, allParts, ',');
+// 	
+// 	for (i = 0; i < n; ++i) {
+// 		UL_ELEMENT e = findBoardPartNamed(parts[i]);
+// 		
+// 		e.texts(t) {
+// 			if (t.layer == LAYER_TNAMES) {
+// 				sprintf(cmd, "change align top-center %s", u2mmPoint(t.x, t.y));
+// 				addCommand(cmd);
+// 			}
+// 		}
+// 	}
+// 
+// 	n = strsplit(parts, solenoidResistorNames, ',');
+// 	for (i = 0; i < n; ++i) {
+// 		UL_ELEMENT e = findBoardPartNamed(parts[i]);
+// 		
+// 		e.texts(t) {
+// 			if (t.layer == LAYER_TNAMES) {
+// 				sprintf(cmd, "change align bottom-center %s", u2mmPoint(t.x, t.y));
+// 				addCommand(cmd);
+// 			}
+// 		}
+// 	}
+// 
+// 	n = strsplit(parts, pumpResistorNames, ',');
+// 	for (i = 0; i < n; ++i) {
+// 		UL_ELEMENT e = findBoardPartNamed(parts[i]);
+// 		
+// 		e.texts(t) {
+// 			if (t.layer == LAYER_TNAMES) {
+// 				sprintf(cmd, "change align top-center %s", u2mmPoint(t.x, t.y));
+// 				addCommand(cmd);
+// 			}
+// 		}
+// 	}
+}
+
+void startPhase10() {
+	// arrange indicator led + resistor labels part 2
+	// 2022.05.16 this is now handled in phase8()
+// 	string solenoidLEDNames = "LED6,LED7,LED8,LED9,LED10,LED11,LED12,LED13,LED14,LED15,LED16,LED17,LED18,LED19,LED20,LED21,LED22,LED23,LED24,LED25,LED26,LED27,LED28,LED29,LED30,LED31,LED32,LED33,LED34,LED35,LED36,LED37";
+// 	string solenoidResistorNames = "R34,R35,R36,R37,R46,R47,R48,R49,R58,R59,R60,R61,R70,R71,R72,R73,R82,R83,R84,R85,R94,R95,R96,R97,R106,R107,R108,R109,R118,R119,R120,R121"
+// 	string pumpLEDNames = "LED38,LED39,LED40,LED41,LED42,LED43,LED44,LED45";
+// 	string pumpResistorNames = "R130,R131,R132,R133,R142,R143,R144,R145";
+// 
+// 	string allParts = solenoidLEDNames + "," + pumpLEDNames;
+// 	string parts[];
+// 	int i;
+// 	int n = strsplit(parts, allParts, ',');
+// 	
+// 	for (i = 0; i < n; ++i) {
+// 		UL_ELEMENT e = findBoardPartNamed(parts[i]);
+// 		
+// 		e.texts(t) {
+// 			if (t.layer == LAYER_TNAMES) {
+// 				moveFromU2mm(t.x, t.y, u2mm(e.x) - 0.6, u2mm(e.y));
+// 			}
+// 		}
+// 	}
+// 
+// 	n = strsplit(parts, solenoidResistorNames, ',');
+// 	for (i = 0; i < n; ++i) {
+// 		UL_ELEMENT e = findBoardPartNamed(parts[i]);
+// 		
+// 		e.texts(t) {
+// 			if (t.layer == LAYER_TNAMES) {
+// 				moveFromU2mm(t.x, t.y, u2mm(e.x) + 0.6, u2mm(e.y));
+// 			}
+// 		}
+// 	}
+// 
+// 	n = strsplit(parts, pumpResistorNames, ',');
+// 	for (i = 0; i < n; ++i) {
+// 		UL_ELEMENT e = findBoardPartNamed(parts[i]);
+// 		
+// 		e.texts(t) {
+// 			if (t.layer == LAYER_TNAMES) {
+// 				moveFromU2mm(t.x, t.y, u2mm(e.x) + 0.6, u2mm(e.y));
+// 			}
+// 		}
+// 	}
+}
+
+void startPhase11() {
+ 	arrangeAtlasDevices();
+}
+
+void startPhase12() {
+  	arrangeESP32Step2();
+}
+
+void startPhase13() {
+// 	addCommand("ripup");
+	arrange33VLDO();
+	arrangeConnectors();
+  	arrangeDCDCSupply();
+}
+
+void startPhase14() {
+}
+
+void startPhase15() {
+	arrangeSolenoidTriggerComponentsPart1();
+}
+
+void startPhase16() {
+	arrangeSolenoidTriggerComponentsPart2();
+}
+
+void startPhase17() {
+// 	addCommand("ripup");
+	arrangeLevelShifters();
+	arrangePumpControls();
+	arrangeShiftRegisters();
+	arrangeHumiditySensor();
+	arrangePressureSensor();
+	arrangeAutoProgrammer();
+}
+
+void startPhase18() {
+// 	arrangeLevelShifters();
+}
+
+void startPhase19() {
+	// draw power plane polygons
+	real halfMinimumLineWidth = minimumLineWidth / 2;
+	real left = -halfMinimumLineWidth;
+	real right = boardWidth + halfMinimumLineWidth;
+	real bottom = -halfMinimumLineWidth;
+	real top = boardHeight + halfMinimumLineWidth;
+	string drawPolygon;
+	string polygonFormat;
+	
+	sprintf(drawPolygon, "polygon %0.03f %s %s %s %s %s",
+		minimumLineWidth,
+		point(left, bottom),
+		point(right, bottom),
+		point(right, top),
+		point(left, top),
+		point(left, bottom)
+	);
+	sprintf(polygonFormat, "polygon '%%s' %0.03f %s %s %s %s %s",
+		minimumLineWidth,
+		point(left, bottom),
+		point(right, bottom),
+		point(right, top),
+		point(left, top),
+		point(left, bottom)
+	);
+	
+	// should be drawing these polygons with 0.012" (0.305mm) isolate
+	// + setting nets
+	// Stackup for this project:
+	// Layer 1, Top, 5V
+	// Layer 2, Route 2, GND
+	// Layer 3, Route 3, 24VAC+
+	// Layer 14, Route 14, 24VAC-
+	// Layer 15, Route 15, GND
+	// Layer 16, Bottom, 3.3V
+
+	// 2-layer board polygons
+	addCommand("layer 1");
+	addCommand(drawPolygon);
+	addCommand("layer 16");
+	addCommand(drawPolygon);
+
+	// 4-layer board polygons
+	addCommand("layer Route2");
+	addCommand(drawPolygon);
+
+	addCommand("layer Route15");
+	addCommand(drawPolygon);
+// 	sprintf(cmd, polygonFormat, "");
+// 	addCommand(cmd);
+
+	// 6-layer board polygons
+// 	addCommand("layer Route3");
+// 	addCommand(drawPolygon);
+// 	addCommand("layer Route14");
+// 	addCommand(drawPolygon);
+}
+
+int shouldSkipPhase(int phaseNumber) {
+	int result = 0;
+
+	switch (phaseNumber) {
+// 		case 1:		result = 1;		break;
+// 		case 2:		result = 1;		break;
+// 		case 3:		result = 1;		break;
+// 		case 4:		result = 1;		break;
+// 		case 5:		result = 1;		break;
+// 		case 6:		result = 1;		break;
+// 		case 7:		result = 1;		break;
+		default:					break;
+	}
+	
+	return result;
+}
+
+int main() {
+	// this script assumes board has been dimensioned to 164x198
+
+	int stopPhase = INT_MAX;
+	string strings[];
+	int n = strsplit(strings, argv[0], '/');
+	string scriptName = strings[n - 1];
+
+	// script phases are necessary because the script is read-only.
+	// run a phase, execute its commands, then re-run the script in
+	// the next phase to observe changes.
+
+	// b.ulp startPhase stopPhase
+
+	if (argc > 1) scriptPhase = strtol(argv[1]);
+	if (argc > 2) stopPhase = strtol(argv[2]);
+	
+	sprintf(cmd, "starting %s in phase %d", scriptName, scriptPhase);
+	status(cmd);
+	
+	output("/tmp/ulp.log", scriptPhase == 1 ? "wt" : "at") {
+		printf("*** start phase %d\n", scriptPhase);
+
+		project.board(b) getBoardInfo(b, scriptPhase == 1);
+
+		addCommand("set beep off");
+		addCommand("set confirm yes");
+
+		int totalNumberOfScriptPhases = 19;
+		int numberOfScriptPhases = min(totalNumberOfScriptPhases, stopPhase);
+
+		if (!shouldSkipPhase(scriptPhase)) {
+			switch (scriptPhase) {
+				case 1:		startPhase1();		break;
+				case 2:		startPhase2();		break;
+				case 3:		startPhase3();		break;
+				case 4:		startPhase4();		break;
+				case 5:		startPhase5();		break;
+				case 6:		startPhase6();		break;
+				case 7:		startPhase7();		break;
+				case 8:		startPhase8();		break;
+				case 9:		startPhase9();		break;
+				case 10:	startPhase10();		break;
+				case 11:	startPhase11();		break;
+				case 12:	startPhase12();		break;
+				case 13:	startPhase13();		break;
+				case 14:	startPhase14();		break;
+				case 15:	startPhase15();		break;
+				case 16:	startPhase16();		break;
+				case 17:	startPhase17();		break;
+				case 18:	startPhase18();		break;
+ 				case 19:	startPhase19();		break;
+			}
+		}
+
+		if (++scriptPhase <= numberOfScriptPhases) {
+			sprintf(cmd, "run %s %d %d", scriptName, scriptPhase, stopPhase);
+			addCommand(cmd);
+		} else {
+			sprintf(cmd, "script %s finished", scriptName);
+			status(cmd);
+		}
+		
+		Exit();
+	}
+
+	return 0;
+}

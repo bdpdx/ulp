@@ -1,0 +1,42 @@
+#include "common.ulp"
+
+int main() {
+	output("/tmp/boardLayout.txt", "wt") {
+		project.board(b) {
+			b.elements(e) {
+				string name = "";
+				string value = "";
+
+ 				e.texts(t) {
+ 					if (t.layer == LAYER_TNAMES) {
+ 						sprintf(name, "n['%s' %s (%0.3f %0.3f)]", t.value, alignToString(t.align), u2mm(t.x), u2mm(t.y));
+ 					}
+ 					else if (t.layer == LAYER_TVALUES) {
+ 						sprintf(value, "v['%s' %s (%0.3f %0.3f)]", t.value, alignToString(t.align), u2mm(t.x), u2mm(t.y));
+ 					}
+				}
+				
+				printf("%s (%0.3f %0.3f) R%0.3f f'%s' v'%s' %s %s\n",
+					e.name,
+					u2mm(e.x),
+					u2mm(e.y),
+					e.angle,
+					e.footprint.name,
+					e.value,
+					name,
+					value);
+			}
+		}
+	}
+
+	output("/tmp/restoreLayout.txt", "wt") {
+		project.board(b) {
+			b.elements(e) {
+				printf("\trotate(\"%s\", %0.3f);\n", e.name, e.angle);
+				printf("\tmove(\"%s\", %0.3f, %0.3f);\n", e.name, u2mm(e.x), u2mm(e.y));
+			}
+		}
+	}
+	
+	return 0;
+}

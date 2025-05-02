@@ -1,0 +1,147 @@
+#include "common.ulp"
+
+void renumberPartsInSchematic(int step) {
+	editSchematic();
+	project.schematic(S) {	
+		int i;
+		int prefixCounts[];
+		string prefixes[];
+		int prefixesCount = 0;
+		int step0Index = 10000;
+
+		S.sheets(sh) {
+			printf("sheet %d: %s\n", sh.number, sh.description);			
+		
+// 			if (sh.number > 1) break;
+		
+			showSheet(sh.number);
+			
+			int namesCount = 0;
+			string oldNames[];
+			real xs[];
+			real ys[];
+			
+			sh.instances(instance) {
+				oldNames[namesCount] = instance.name;
+				xs[namesCount] = instance.x;
+				ys[namesCount] = -instance.y;
+				namesCount += 1;
+			}
+			
+			printf("sheet %d has %d instances:\n", sh.number, namesCount);
+
+			for (i = 0; i < namesCount; ++i) {
+				printf("    %d: %s (%0.3f %0.3f)\n", i, oldNames[i], xs[i], ys[i]);
+			}
+			
+			int indices[];
+			
+			sort(namesCount, indices, ys, xs);
+
+			printf("after sorting:\n");
+
+			for (i = 0; i < namesCount; ++i) {
+				printf("    %d: %s (%0.3f %0.3f)\n", i, oldNames[indices[i]], xs[indices[i]], ys[indices[i]]);
+			}
+			
+			for (i = 0; i < namesCount; ++i) {
+				string decodedName = decodeNameIntoPartPrefixAndIndexSuffix(oldNames[indices[i]]);
+				string nameParts[];
+				if (strsplit(nameParts, decodedName, ',') != 2) {
+					printf("couldn't split %s into two parts\n", decodedName);
+					continue;
+				}
+
+				string prefix = nameParts[0];
+				int addPrefix = 1;
+
+				for (int j = 0; j < prefixesCount; ++j) {
+					if (!strcmp(prefix, prefixes[j])) {
+						addPrefix = 0;
+					}
+				}
+				
+				if (addPrefix) {
+					prefixes[prefixesCount] = prefix;
+					prefixCounts[prefixesCount] = 0;
+					prefixesCount += 1;
+				}
+			}
+
+			if (prefixesCount == 0) {
+				printf("no prefixes in sheet\n");
+				continue;
+			}
+			
+			string newNames[];
+			
+			for (i = 0; i < namesCount; ++i) {
+				string oldName = oldNames[indices[i]];
+				string decodedName = decodeNameIntoPartPrefixAndIndexSuffix(oldNames[indices[i]]);
+				string nameParts[];
+				if (strsplit(nameParts, decodedName, ',') != 2) {
+					continue;
+				}
+				
+				string prefix = nameParts[0];
+				
+				for (int j = 0; j < prefixesCount; ++j) {
+					if (!strcmp(prefix, prefixes[j])) {
+						int suffix = prefixCounts[j] + 1;
+						prefixCounts[j] = suffix;
+						string newName;
+						
+						sprintf(newName, "%s%d", prefix, suffix);
+						newNames[indices[i]] = newName;
+						break;
+					}
+				}
+			}
+
+			printf("name map:\n");
+			
+			for (i = 0; i < namesCount; ++i) {
+				printf("    old: %s, new: %s\n", oldNames[indices[i]], newNames[indices[i]]);
+			}		
+		
+			sh.instances(instance) {
+				string partName = instance.name;
+				string decodedName = decodeNameIntoPartPrefixAndIndexSuffix(partName);
+				string nameParts[];
+				
+				if (strsplit(nameParts, decodedName, ',') != 2) {
+					continue;
+				}
+				
+				string prefix = nameParts[0];
+
+				if (strtol(nameParts[1]) == 0) {
+					printf("not renumbering part %s as it has no numeric suffix", partName);
+					continue;
+				}
+
+				// can't rename SUPPLY components
+				if (!strcmp(prefix, "GND") ||
+					!strcmp(prefix, "SUPPLY"))
+				{
+// 						printf("can't rename supply symbols\n");
+					continue;
+				}
+
+				if (step == 0) {
+					// bump all the values by 10000 to prepare for reindexing
+					sprintf(cmd, "name '%s' '%s%d'", partName, prefix, step0Index++);
+					addCommand(cmd);
+				} else {
+					for (i = 0; i < namesCount; ++i) {
+						if (!strcmp(oldNames[i], partName)) {
+							sprintf(cmd, "name '%s' '%s'", partName, newNames[i]);
+							addCommand(cmd);
+							break;
+						}
+					}
+				}
+			}
+		}
+	}
+}

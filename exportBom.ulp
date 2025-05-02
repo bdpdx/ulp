@@ -1,0 +1,23 @@
+#include "common.ulp"
+
+int main() {
+	output("/tmp/jlcpcb_bom.csv", "wt") {
+		editSchematic();
+		
+		printf("Designator,Comment,Footprint,LCSC Part #,EAGLE Footprint,EAGLE sheet\n");
+	
+		project.schematic(s) {
+			s.sheets(sh) {
+				sh.instances(i) {
+					printf("%s,\"%s\",,,%s,%s\n",
+						i.name,
+						i.value,
+						i.part.device.name,
+						sh.headline);
+				}
+			}
+		}
+	}
+	
+	return 0;
+}

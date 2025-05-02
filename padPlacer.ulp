@@ -1,0 +1,2154 @@
+#usage "Brian's Pad Placer"
+
+#include "common.ulp"
+
+// all units in this file in mm
+
+real gridMajorDivision = 0.5;
+real gridMinorDivision = 0.01;
+string gridUnit = "mm";
+
+real distanceBetweenPadCentersHorizontally = 2.54 * 2;
+real distanceBetweenPadCentersVertically = 2.54 * 2;
+int numberOfPadColumns = 1;
+int numberOfPadRows = 1;
+real padDiameter = 0;
+real padDrillDiameter = 0.6;
+
+// ULPs support neither multidimensional arrays nor passing/returning arrays so use a
+// global single-dimensional array for padNumbers. Zero values mean don't place that
+// pad.
+int padNumbers[] = {
+	1, 6,
+	2, 5,
+	3, 4
+};
+
+void setup() {
+	setGrid(1, gridUnit, gridMajorDivision, gridMinorDivision);
+
+	addCommand("change font vector");
+	addCommand("change ratio 8");
+
+	sprintf(cmd, "change size %0.03f", minimumTextHeight);
+	addCommand(cmd);
+
+	sprintf(cmd, "change width %0.03f", minimumLineWidth);
+	addCommand(cmd);
+}
+
+void placeShapedPads(real partHeight, real partWidth, string firstPadShape, string otherPadsShape) {
+	sprintf(cmd, "change diameter %0.03f", padDiameter);
+	addCommand(cmd);
+
+	sprintf(cmd, "change drill %0.03f", padDrillDiameter);
+	addCommand(cmd);
+
+	int hasPlacedFirstPad = 0;
+
+	sprintf(cmd, "change shape %s", firstPadShape);
+	addCommand(cmd);
+
+	real y = (partHeight - padDiameter) / 2;
+
+	// place columns left to right
+	// place rows top to bottom
+	for (int i = 0; i < numberOfPadRows; ++i) {
+		int index = i * numberOfPadColumns;
+
+		real x = (-partWidth + padDiameter) / 2;
+	
+		for (int j = 0; j < numberOfPadColumns; ++index, ++j) {
+			printf("column %d, x is %0.03f, y is %0.03f\n", i, x, y);
+
+			int padNumber = padNumbers[index];
+			
+			if (padNumber >= 1) {
+				sprintf(cmd, "pad (%0.03f %0.03f)", x, y);
+				addCommand(cmd);
+				
+				if (!hasPlacedFirstPad) {
+					hasPlacedFirstPad = 1;
+					
+					sprintf(cmd, "change shape %s", otherPadsShape);
+					addCommand(cmd);
+				}
+			}
+			
+			x += distanceBetweenPadCentersHorizontally;
+		}
+		
+		y -= distanceBetweenPadCentersVertically;
+	}
+}
+
+void placePads(real partHeight, real partWidth) {
+	placeShapedPads(partHeight, partWidth, "round", "round");
+}
+
+void placeSMDs(real partHeight, real partWidth, real smdHeight, real smdWidth, real centerX, real centerY) {
+	addCommand("layer top");
+
+	real y = centerY + (partHeight - smdHeight) / 2;
+
+	// place columns left to right
+	// place rows top to bottom
+	for (int row = 0; row < numberOfPadRows; ++row) {
+		int index = row * numberOfPadColumns;
+
+		real x = centerX + (-partWidth + smdWidth) / 2;
+	
+		for (int column = 0; column < numberOfPadColumns; ++index, ++column) {
+			printf("row %d : column %d, x is %0.03f, y is %0.03f\n", row, column, x, y);
+
+			int padNumber = padNumbers[index];
+			
+			if (padNumber >= 1) {
+				sprintf(cmd, "smd %0.3f %0.3f 'p$%d' %s", smdWidth, smdHeight, padNumber, point(x, y));
+				addCommand(cmd);
+			}
+			
+			x += distanceBetweenPadCentersHorizontally;
+		}
+		
+		y -= distanceBetweenPadCentersVertically;
+	}
+}
+
+void placeSMDsCenteredAboutOrigin(real partHeight, real partWidth, real smdHeight, real smdWidth) {
+	placeSMDs(partHeight, partWidth, smdHeight, smdWidth, 0.0, 0.0);
+}
+
+void createPadsForAishiCapacitor(real partDiameter, real leadCenterToCenter, real leadDiameter) {
+	// aluminum electrolytic capacitor
+	// copy this to the global padNumbers variable
+// 	int padNumbers[] = {
+// 		1, 2
+// 	};
+
+	real partRadius = partDiameter / 2;
+
+	distanceBetweenPadCentersHorizontally = leadCenterToCenter;
+	distanceBetweenPadCentersVertically = 0;
+	numberOfPadColumns = 2;
+	numberOfPadRows = 1;
+	padDiameter = 1.5;
+	padDrillDiameter = leadDiameter;
+
+	setup();
+
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + padDiameter;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + padDiameter;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placeShapedPads(partHeight, partWidth, "square", "round");
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+	
+	drawCircle(0, 0, 0, partRadius + minimumLineWidth / 2);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	drawCircle(minimumLineWidth, 0, 0, partRadius);
+
+	addCommand("change align bottom-center");
+	
+	real x = -distanceBetweenPadCentersHorizontally / 2;
+	real y = floorTo(padDiameter / 2 + 0.5, 0.5);
+	
+	sprintf(cmd, "text '+' %s", point(x, y));
+	addCommand(cmd);
+	sprintf(cmd, "text '-' %s", point(-x, y));
+	addCommand(cmd);
+
+	x = 0;
+	y = partRadius + 0.2;
+	
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	sprintf(cmd, "text '>NAME' (%0.03f %0.03f)", x, y);
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+
+	sprintf(cmd, "text '>VALUE' (%0.03f %0.03f)", x, -y);
+	addCommand(cmd);
+}
+
+void createPadsForCUIDevices_PDQE30_D() {
+	// dc-dc converter
+	// copy this to the global padNumbers variable
+// 	int padNumbers[] = {
+// 		1, 6,
+// 		0, 0,
+// 		0, 0,
+// 		2, 0,
+// 		0, 5,
+// 		3, 0,
+// 		0, 0,
+// 		0, 0,
+// 		0, 4
+// 	};
+
+	distanceBetweenPadCentersHorizontally = 20.32;
+	distanceBetweenPadCentersVertically = 2.54;
+	gridMajorDivision = 2.54;
+	numberOfPadColumns = 2;
+	numberOfPadRows = 9;
+	padDiameter = 2.54;
+	padDrillDiameter = 1.42;
+
+	setup();
+
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + padDiameter;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + padDiameter;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placePads(partHeight, partWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	// from datasheet, package is 1"x1"	
+	partHeight = 25.4;
+	partWidth = 25.4;
+
+	real cornerRadius = gridMajorDivision / 2;
+	real upperLeftX = -partWidth / 2;
+	real upperLeftY = partHeight / 2;
+	real lowerRightX = -upperLeftX;
+	real lowerRightY = -upperLeftY;
+		
+	drawRoundedRectangle(upperLeftX, upperLeftY, lowerRightX, lowerRightY, cornerRadius, 0);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	drawRoundedRectangle(upperLeftX, upperLeftY, lowerRightX, lowerRightY, cornerRadius, 0.25);
+	
+	real x = upperLeftX + cornerRadius;
+	real y = partHeight / 2 + 0.5;
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-left");
+	
+	sprintf(cmd, "text '>NAME' (%0.03f %0.03f)", x, y);
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-left");
+	
+	sprintf(cmd, "text '>VALUE' (%0.03f %0.03f)", x, -y);
+	addCommand(cmd);
+}
+
+void createPadsForHRO_K3_1204D() {
+	// SPDT slide switch red
+	
+	// copy this to the global padNumbers variable
+// 	int padNumbers[] = {
+//		1, 2, 3
+// 	};
+
+	distanceBetweenPadCentersHorizontally = 2.55;
+	distanceBetweenPadCentersVertically = 0;
+	numberOfPadColumns = 3;
+	numberOfPadRows = 1;
+	padDiameter = distanceBetweenPadCentersHorizontally - 0.4;
+	padDrillDiameter = 0.9;
+
+	setup();
+
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + padDiameter;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + padDiameter;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placePads(partHeight, partWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	partHeight = 2.5;
+	partWidth = 10.0;
+
+	real upperLeftX = -partWidth / 2;
+	real upperLeftY = partHeight / 2;
+	real lowerRightX = -upperLeftX;
+	real lowerRightY = -upperLeftY;
+		
+	drawRectangle(upperLeftX, upperLeftY, lowerRightX, lowerRightY, 0);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	drawRectangle(upperLeftX, upperLeftY, lowerRightX, lowerRightY, minimumLineWidth);
+	
+	real x = upperLeftX;
+	real y = partHeight / 2 + 0.25;
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-left");
+	
+	sprintf(cmd, "text '>NAME' (%0.03f %0.03f)", x, y);
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-left");
+	
+	sprintf(cmd, "text '>VALUE' (%0.03f %0.03f)", x, -y);
+	addCommand(cmd);
+}
+
+void createPadsForJSTXH() {
+	// JST XH board-to-wire header connector
+	// copy this to the global padNumbers variable
+// 	int padNumbers[] = {
+// 		1, 2, 3
+// 	};
+
+	distanceBetweenPadCentersHorizontally = 2.5;
+	distanceBetweenPadCentersVertically = 0;
+	numberOfPadColumns = 4;
+	numberOfPadRows = 1;
+	padDiameter = distanceBetweenPadCentersHorizontally - 0.4;
+	padDrillDiameter = 0.9;
+
+	setup();
+
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + padDiameter;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + padDiameter;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placePads(partHeight, partWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	real notchInset = 2.45;
+	partHeight = 5.75;
+	partWidth = notchInset * 2 + distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1);
+
+	real left = -partWidth / 2;
+	real right = -left;
+	real top = partHeight / 2;
+	real bottom = -top;
+		
+	drawRectangle(left, top, right, bottom, 0);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	real notchHeight = 0.75;
+	real notchWidth = 2;
+	real notchStart = notchInset - notchWidth / 2;
+
+	drawLine(minimumLineWidth, left, top, right, top);
+	drawLine(minimumLineWidth, right, top, right, bottom);
+	drawLine(minimumLineWidth, right, bottom, right - notchStart, bottom);
+	drawLine(minimumLineWidth, right - notchStart, bottom, right - notchStart, bottom + notchHeight);
+	drawLine(minimumLineWidth, right - notchStart, bottom + notchHeight, right - notchStart - notchWidth, bottom + notchHeight);
+	drawLine(minimumLineWidth, right - notchStart - notchWidth, bottom + notchHeight, right - notchStart - notchWidth, bottom);
+	drawLine(minimumLineWidth, right - notchStart - notchWidth, bottom, left + notchStart + notchWidth, bottom);
+	drawLine(minimumLineWidth, left + notchStart + notchWidth, bottom, left + notchStart + notchWidth, bottom + notchHeight);
+	drawLine(minimumLineWidth, left + notchStart + notchWidth, bottom + notchHeight, left + notchStart, bottom + notchHeight);
+	drawLine(minimumLineWidth, left + notchStart, bottom + notchHeight, left + notchStart, bottom);
+	drawLine(minimumLineWidth, left + notchStart, bottom, left, bottom);
+	drawLine(minimumLineWidth, left, bottom, left, top);
+	
+	real x = left;
+	real y = partHeight / 2 + 0.25;
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-left");
+	
+	sprintf(cmd, "text '>NAME' (%0.03f %0.03f)", x, y);
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-left");
+	
+	sprintf(cmd, "text '>VALUE' (%0.03f %0.03f)", x, -y);
+	addCommand(cmd);
+}
+
+void createPadsForNichiconCapacitor() {
+	// aluminum electrolytic capacitor
+	// copy this to the global padNumbers variable
+// 	int padNumbers[] = {
+// 		1, 2
+// 	};
+
+	real partDiameter = 16;
+	real partRadius = partDiameter / 2;
+
+	distanceBetweenPadCentersHorizontally = 7.5;
+	distanceBetweenPadCentersVertically = 0;
+	numberOfPadColumns = 2;
+	numberOfPadRows = 1;
+	padDiameter = 2.0;
+	padDrillDiameter = 0.8;
+
+	setup();
+
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + padDiameter;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + padDiameter;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placeShapedPads(partHeight, partWidth, "square", "round");
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+	
+	drawCircle(0, 0, 0, partRadius + minimumLineWidth / 2);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	drawCircle(minimumLineWidth, 0, 0, partRadius);
+
+	real x = 0;
+	real y = partRadius + 0.2;
+	
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	sprintf(cmd, "text '>NAME' (%0.03f %0.03f)", x, y);
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+
+	sprintf(cmd, "text '>VALUE' (%0.03f %0.03f)", x, -y);
+	addCommand(cmd);
+}
+
+void createPadsForSMC_KBP310G() {
+	// bridge rectifier
+	// copy this to the global padNumbers variable
+// 	int padNumbers[] = {
+// 		1, 2, 3, 4
+// 	};
+
+	distanceBetweenPadCentersHorizontally = (4.06 + 3.56) / 2.0;	// 3.81
+	distanceBetweenPadCentersVertically = 1;
+	numberOfPadColumns = 4;
+	numberOfPadRows = 1;
+	padDrillDiameter = 1.5;	
+
+// 	real spaceBetweenPins = distanceBetweenPadCentersHorizontally - padDrillDiameter - minimumPadToPadClearance;
+// 	spaceBetweenPins /= 2;	// allocate half the distance for each pin	// 1.0915
+	padDiameter = 2.54;	// could go ~3.5, but this is the same as the CUI Devices pad size so go with it.
+
+	setup();
+
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + padDiameter;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + padDiameter;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placePads(partHeight, partWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	// from datasheet, package is 1"x1"	
+	partHeight = 3.65;
+	partWidth = 14.75;
+
+	real upperLeftX = -partWidth / 2;
+	real upperLeftY = partHeight / 2;
+	real lowerRightX = -upperLeftX;
+	real lowerRightY = -upperLeftY;
+		
+	drawRectangle(upperLeftX, upperLeftY, lowerRightX, lowerRightY, 0);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	drawRectangle(upperLeftX, upperLeftY, lowerRightX, lowerRightY, 0.2);
+	
+	real y = floor(-partHeight / 2) - 0.1;
+
+	addCommand("layer tNames");
+	addCommand("change align top-left");
+	
+	sprintf(cmd, "text '>NAME' (%0.03f %0.03f)", upperLeftX, y);
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-right");
+	
+	sprintf(cmd, "text '>VALUE' (%0.03f %0.03f)", lowerRightX, y);
+	addCommand(cmd);
+}
+
+void createSMDsFor0402() {
+	int padNumbers[] = {
+		1, 2
+	};
+
+	real smdHeight = 0.7;
+	real smdWidth = 0.6;
+	distanceBetweenPadCentersHorizontally = 0.5 + smdWidth;
+	numberOfPadColumns = 2;
+	numberOfPadRows = 1;
+	
+	setup();
+	
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + smdWidth;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + smdHeight;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placeSMDsCenteredAboutOrigin(partHeight, partWidth, smdHeight, smdWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	real keepoutOverhang = 0.2;
+
+	real top = partHeight / 2 + keepoutOverhang;
+	real left = -partWidth / 2 - keepoutOverhang;
+	real bottom = -top;
+	real right = -left	;
+		
+	drawRectangle(left, top, right, bottom, 0);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	drawRectangle(left, top, right, bottom, minimumLineWidth);
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	real x = 0;
+	real y = ceilingTo(top, 0.5);
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+void createSMDsFor0402Polarized() {
+	int padNumbers[] = {
+		1, 2
+	};
+
+	real smdHeight = 0.7;
+	real smdWidth = 0.6;
+	distanceBetweenPadCentersHorizontally = 0.5 + smdWidth;
+	numberOfPadColumns = 2;
+	numberOfPadRows = 1;
+	
+	setup();
+	
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + smdWidth;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + smdHeight;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placeSMDsCenteredAboutOrigin(partHeight, partWidth, smdHeight, smdWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	real keepoutOverhang = 0.2;
+
+	real top = partHeight / 2 + keepoutOverhang;
+	real left = -partWidth / 2 - keepoutOverhang;
+	real bottom = -top;
+	real right = -left	;
+		
+	drawRectangle(left, top, right, bottom, 0);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	real inset = 0.1;
+	real minusLength = 0.2;
+	
+	drawLine(minimumLineWidth, left, top, right, top);
+	drawLine(minimumLineWidth, right, top, right, top - inset);
+	drawLine(minimumLineWidth, right, bottom + inset, right, bottom);
+	drawLine(minimumLineWidth, right, bottom, left, bottom);
+	drawLine(minimumLineWidth, left, bottom, left, bottom + inset);
+	drawLine(minimumLineWidth, left, top - inset, left, top);
+	drawLine(minimumLineWidth, right, minusLength / 2, right, -minusLength / 2);
+	drawLine(minimumLineWidth, left, -minusLength / 2, left, minusLength / 2);
+	drawLine(minimumLineWidth, left - minusLength / 2, 0, left + minusLength / 2, 0);
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	real x = 0;
+	real y = ceilingTo(top, 0.5);
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+void createSMDsFor0603() {
+	int padNumbers[] = {
+		1, 2
+	};
+
+	real smdHeight = 0.8;
+	real smdWidth = 0.8;
+	distanceBetweenPadCentersHorizontally = 0.7 + smdWidth;
+	numberOfPadColumns = 2;
+	numberOfPadRows = 1;
+	
+	setup();
+	
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + smdWidth;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + smdHeight;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placeSMDsCenteredAboutOrigin(partHeight, partWidth, smdHeight, smdWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	real keepoutOverhang = 0.2;
+
+	real top = partHeight / 2 + keepoutOverhang;
+	real left = -partWidth / 2 - keepoutOverhang;
+	real bottom = -top;
+	real right = -left	;
+		
+	drawRectangle(left, top, right, bottom, 0);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	drawRectangle(left, top, right, bottom, minimumLineWidth);
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	real x = 0;
+	real y = ceilingTo(top, 0.5);
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+void createSMDsFor0603Polarized() {
+	int padNumbers[] = {
+		1, 2
+	};
+
+	real smdHeight = 0.8;
+	real smdWidth = 0.8;
+	distanceBetweenPadCentersHorizontally = 0.7 + smdWidth;
+	numberOfPadColumns = 2;
+	numberOfPadRows = 1;
+	
+	setup();
+	
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + smdWidth;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + smdHeight;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placeSMDsCenteredAboutOrigin(partHeight, partWidth, smdHeight, smdWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	real keepoutOverhang = 0.2;
+
+	real top = partHeight / 2 + keepoutOverhang;
+	real left = -partWidth / 2 - keepoutOverhang;
+	real bottom = -top;
+	real right = -left	;
+		
+	drawRectangle(left, top, right, bottom, 0);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	real inset = 0.1;
+	real minusLength = 0.2;
+	
+	drawLine(minimumLineWidth, left, top, right, top);
+	drawLine(minimumLineWidth, right, top, right, top - inset);
+	drawLine(minimumLineWidth, right, bottom + inset, right, bottom);
+	drawLine(minimumLineWidth, right, bottom, left, bottom);
+	drawLine(minimumLineWidth, left, bottom, left, bottom + inset);
+	drawLine(minimumLineWidth, left, top - inset, left, top);
+	drawLine(minimumLineWidth, right, minusLength / 2, right, -minusLength / 2);
+	drawLine(minimumLineWidth, left, -minusLength / 2, left, minusLength / 2);
+	drawLine(minimumLineWidth, left - minusLength / 2, 0, left + minusLength / 2, 0);
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	real x = 0;
+	real y = ceilingTo(top, 0.5);
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+void createSMDsForPolarized1210() {
+	int padNumbers[] = {
+		1, 2
+	};
+
+	real smdHeight = 2.4;
+	real smdWidth = 1.5;
+	distanceBetweenPadCentersHorizontally = 2.8;
+	numberOfPadColumns = 2;
+	numberOfPadRows = 1;
+	
+	setup();
+	
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + smdWidth;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + smdHeight;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placeSMDsCenteredAboutOrigin(partHeight, partWidth, smdHeight, smdWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	real keepoutOverhang = 0.5;
+
+	real top = partHeight / 2 + keepoutOverhang;
+	real left = -partWidth / 2 - keepoutOverhang;
+	real bottom = -top;
+	real right = -left	;
+		
+	drawRectangle(left, top, right, bottom, 0);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	real inset = 1.0;
+	real minusLength = 0.4;
+	
+	drawLine(minimumLineWidth, left, top, right, top);
+	drawLine(minimumLineWidth, right, top, right, top - inset);
+	drawLine(minimumLineWidth, right, bottom + inset, right, bottom);
+	drawLine(minimumLineWidth, right, bottom, left, bottom);
+	drawLine(minimumLineWidth, left, bottom, left, bottom + inset);
+	drawLine(minimumLineWidth, left, top - inset, left, top);
+	drawLine(minimumLineWidth, right, minusLength / 2, right, -minusLength / 2);
+	drawLine(minimumLineWidth, left, -minusLength / 2, left, minusLength / 2);
+	drawLine(minimumLineWidth, left - minusLength / 2, 0, left + minusLength / 2, 0);
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	real x = 0;
+	real y = ceilingTo(top, 1.0);
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+void createSMDsForAVXCapacitor() {
+	int padNumbers[] = {
+		1, 2
+	};
+
+	real smdHeight = 2.4;	// 2.2 + 0.2 extended area
+	real smdWidth = 1.1;	// 0.8 + 0.3 extended area
+	distanceBetweenPadCentersHorizontally = 1.4 + 0.8;
+	numberOfPadColumns = 2;
+	numberOfPadRows = 1;
+	
+	setup();
+	
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + smdWidth;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + smdHeight;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placeSMDsCenteredAboutOrigin(partHeight, partWidth, smdHeight, smdWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	real keepoutOverhang = 0.5;
+
+	real top = partHeight / 2 + keepoutOverhang;
+	real left = -partWidth / 2 - keepoutOverhang;
+	real bottom = -top;
+	real right = -left	;
+		
+	drawRectangle(left, top, right, bottom, 0);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	real inset = 1.0;
+	real minusLength = 0.4;
+	
+	drawLine(minimumLineWidth, left, top, right, top);
+	drawLine(minimumLineWidth, right, top, right, top - inset);
+	drawLine(minimumLineWidth, right, bottom + inset, right, bottom);
+	drawLine(minimumLineWidth, right, bottom, left, bottom);
+	drawLine(minimumLineWidth, left, bottom, left, bottom + inset);
+	drawLine(minimumLineWidth, left, top - inset, left, top);
+	drawLine(minimumLineWidth, right, minusLength / 2, right, -minusLength / 2);
+	drawLine(minimumLineWidth, left, -minusLength / 2, left, minusLength / 2);
+	drawLine(minimumLineWidth, left - minusLength / 2, 0, left + minusLength / 2, 0);
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	real x = 0;
+	real y = ceilingTo(top, 1.0);
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+void createSMDsForBSMD1812() {
+	// BSMD1812 https://datasheet.lcsc.com/lcsc/2103231608_BHFUSE-BSMD1812-200-30V_C960026.pdf
+	// PTC
+
+// 	int padNumbers[] = {
+// 		1,	2
+// 	};
+
+	distanceBetweenPadCentersHorizontally = 3.45 + 1.78;
+	distanceBetweenPadCentersVertically = 0;
+	numberOfPadColumns = 2;
+	numberOfPadRows = 1;
+	real smdHeight = 3.15;
+	real smdWidth = 1.78;
+	
+	setup();
+	
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + smdWidth;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + smdHeight;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placeSMDsCenteredAboutOrigin(partHeight, partWidth, smdHeight, smdWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	real keepoutOverhang = 0.1;
+
+	real upperLeftX = -partWidth / 2 - keepoutOverhang;
+	real upperLeftY = partHeight / 2 + keepoutOverhang;
+	real lowerRightX = -upperLeftX;
+	real lowerRightY = -upperLeftY;
+		
+	drawRectangle(upperLeftX, upperLeftY, lowerRightX, lowerRightY, 0);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	real caseHeight = 3.41;
+	real caseWidth = 4.73;
+	real inset = 0.1;
+	real lineWidth = 0.153;
+	real left = -caseWidth / 2;
+	real top = caseHeight / 2 + lineWidth / 2;
+	real bottom = -top;
+	real right = -left;
+	
+	drawLine(lineWidth, left, top, right, top);
+	drawLine(lineWidth, right, top, right, top - inset);
+	drawLine(lineWidth, right, bottom + inset, right, bottom);
+	drawLine(lineWidth, right, bottom, left, bottom);
+	drawLine(lineWidth, left, bottom, left, bottom + inset);
+	drawLine(lineWidth, left, top - inset, left, top);
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	real x = 0;
+	real y = ceilingTo(partHeight / 2 + 0.254, 0.1);
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+void createSMDsForEL357N() {
+// Transistor Output Optocouplers 50-600CTR 3750Vrms -55 to +100 Op Temp
+// 	int padNumbers[] = {
+// 		1, 4,
+// 		2, 3
+// 	};
+
+	real smdHeight = 0.6;
+	real smdWidth = 1.5;
+	distanceBetweenPadCentersHorizontally = 4.85 + smdWidth;
+	distanceBetweenPadCentersVertically = 2.54;
+	numberOfPadColumns = 2;
+	numberOfPadRows = 2;
+	
+	setup();
+	
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + smdWidth;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + smdHeight;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placeSMDsCenteredAboutOrigin(partHeight, partWidth, smdHeight, smdWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	real keepoutOverhang = 0.1;
+	real keepoutHeight = 4.3;
+
+	real upperLeftX = -partWidth / 2 - keepoutOverhang;
+	real upperLeftY = keepoutHeight / 2;
+	real lowerRightX = -upperLeftX;
+	real lowerRightY = -upperLeftY;
+		
+	drawRectangle(upperLeftX, upperLeftY, lowerRightX, lowerRightY, 0);
+
+	// Draw package outline
+
+	real caseHeight = 4.1;
+	real caseWidth = 4.4;
+	real lineWidth = 0.153;
+
+	addCommand("layer tPlace");
+		
+	upperLeftX = -(caseWidth - lineWidth) / 2;
+	upperLeftY = (caseHeight - lineWidth) / 2;
+
+	drawRectangle(upperLeftX, upperLeftY, -upperLeftX, -upperLeftY, lineWidth);
+
+	real upperLeftSMDCenterY = (partHeight - smdHeight) / 2;
+	real pin1CircleCenterX = upperLeftX + 0.5;
+	real pin1CircleCenterY = upperLeftSMDCenterY;
+	real radius = 0.15;
+	string center = point(pin1CircleCenterX, pin1CircleCenterY);
+	string pointOnCircle = point(pin1CircleCenterX, pin1CircleCenterY + radius);
+
+	sprintf(cmd, "circle 0 %s %s", center, pointOnCircle);
+	addCommand(cmd);
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	real x = 0;
+	real y = ceilingTo(caseHeight / 2 + 0.254, 0.1);
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+void createSMDsForLQFP64() {
+	// FT2232HL, LQFP-64
+	// https://www.ftdichip.com/Support/Documents/DataSheets/ICs/DS_FT2232H.pdf
+
+	int i;
+	real columnToColumnCenterDistance = 11.15;
+	real outlineWidth = 9;
+	real padToPadCenterDistance = 0.5;
+	real smdHeight = 0.3;
+	real smdWidth = 1.65;
+	
+	setup();
+	
+	// 1: Place Pads
+	addCommand("layer top");
+	
+	real x = -(7 * padToPadCenterDistance + padToPadCenterDistance / 2);
+	real y = columnToColumnCenterDistance / 2;
+
+	for (i = 0; i < 16; ++i) {
+		sprintf(cmd, "smd %0.3f %0.3f 'p$%d' %s", smdHeight, smdWidth, 64 - i, point(x, y));
+		addCommand(cmd);
+		x += padToPadCenterDistance;
+	}
+	
+	x = -(7 * padToPadCenterDistance + padToPadCenterDistance / 2);
+	y = -columnToColumnCenterDistance / 2;
+	
+	for (i = 0; i < 16; ++i) {
+		sprintf(cmd, "smd %0.3f %0.3f 'p$%d' %s", smdHeight, smdWidth, 17 + i, point(x, y));
+		addCommand(cmd);
+		x += padToPadCenterDistance;
+	}
+
+	x = -columnToColumnCenterDistance / 2;
+	y = -(7 * padToPadCenterDistance + padToPadCenterDistance / 2);
+	
+	for (i = 0; i < 16; ++i) {
+		sprintf(cmd, "smd %0.3f %0.3f 'p$%d' %s", smdWidth, smdHeight, 16 - i, point(x, y));
+		addCommand(cmd);
+		y += padToPadCenterDistance;
+	}
+	
+	x = columnToColumnCenterDistance / 2;
+	y = -(7 * padToPadCenterDistance + padToPadCenterDistance / 2);
+	
+	for (i = 0; i < 16; ++i) {
+		sprintf(cmd, "smd %0.3f %0.3f 'p$%d' %s", smdWidth, smdHeight, 33 + i, point(x, y));
+		addCommand(cmd);
+		y += padToPadCenterDistance;
+	}
+	
+	// 2: Define keepout region
+
+	real notchInset = 1;
+
+	addCommand("layer tKeepout");
+	addCommand("set wire_bend 2");	// allow 45 degree lines
+
+	real top = outlineWidth / 2;
+	real left = -top;
+	real bottom = -top;
+	real right = -left;
+		
+	drawLine(minimumLineWidth, left + notchInset, top, right, top);
+	drawLine(minimumLineWidth, right, top, right, bottom);
+	drawLine(minimumLineWidth, right, bottom, left, bottom);
+	drawLine(minimumLineWidth, left, bottom, left, top - notchInset);
+	drawLine(minimumLineWidth, left, top - notchInset, left + notchInset, top);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	top = outlineWidth / 2;
+	left = -top;
+	bottom = -top;
+	right = -left;
+
+	drawLine(minimumLineWidth, left + notchInset, top, right, top);
+	drawLine(minimumLineWidth, right, top, right, bottom);
+	drawLine(minimumLineWidth, right, bottom, left, bottom);
+	drawLine(minimumLineWidth, left, bottom, left, top - notchInset);
+	drawLine(minimumLineWidth, left, top - notchInset, left + notchInset, top);
+
+	// place pin 1 designator
+	
+	x = -columnToColumnCenterDistance / 2;
+	y = (7 * padToPadCenterDistance + padToPadCenterDistance / 2) + padToPadCenterDistance * 1.5;
+
+	drawFilledCircle(x, y, 0.25);
+
+	addCommand("layer tNames");
+	addCommand("change align top-center");
+	
+	x = 0;
+	y = floor(outlineWidth / 2);
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align bottom-center");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+void createSMDsForMOC3063() {
+	// Lite-On MOC3063
+	// https://datasheet.lcsc.com/lcsc/1810161110_Lite-On-MOC3063S-TA1_C77950.pdf
+
+// 	int padNumbers[] = {
+// 		6, 5, 4,
+// 		1, 2, 3
+// 	};
+
+	distanceBetweenPadCentersHorizontally = 2.54;
+	distanceBetweenPadCentersVertically = 9;
+	numberOfPadColumns = 3;
+	numberOfPadRows = 2;
+	real smdHeight = 1.3;
+	real smdWidth = 1.5;
+	
+	setup();
+	
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + smdWidth;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + smdHeight;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placeSMDsCenteredAboutOrigin(partHeight, partWidth, smdHeight, smdWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	real keepoutOverhang = 0.1;
+
+	real left = -partWidth / 2 - keepoutOverhang;
+	real top = partHeight / 2 + keepoutOverhang;
+	real right = -left;
+	real bottom = -top;
+		
+	drawRectangle(left, top, right, bottom, 0);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	real caseHeight = 6.5;
+	real caseWidth = 7.3;
+	real notchDiameter = 2;
+	real inset = (caseHeight - notchDiameter) / 2;
+
+	left = -caseWidth / 2;
+	top = caseHeight / 2 + minimumLineWidth / 2;
+	bottom = -top;
+	right = -left;
+
+	drawLine(minimumLineWidth, left, top, right, top);
+	drawLine(minimumLineWidth, right, top, right, bottom);
+	drawLine(minimumLineWidth, right, bottom, left, bottom);
+	drawLine(minimumLineWidth, left, bottom, left, bottom + inset);
+	drawLine(minimumLineWidth, left, top - inset, left, top);
+
+	sprintf(cmd, "arc cw round %0.3f %s %s %s",
+		minimumLineWidth,
+		point(left, top - inset),
+		point(left, bottom + inset),
+		point(left, bottom + inset)
+	);
+	addCommand(cmd);
+
+	// place pin 1 designator
+	
+	real pin1X = -distanceBetweenPadCentersHorizontally;
+	real pin1Y = -distanceBetweenPadCentersVertically / 2;
+	
+	real x = pin1X;
+	real y = bottom + 0.75;
+	
+	drawFilledCircle(x, y, smdHeight / 2 * 0.5);
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	x = 0;
+	y = ceilingTo(partHeight / 2 + 0.254, 0.1);
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+void createSMDsForSeikoFA238V() {
+	int padNumbers[] = {
+		4, 3,
+		1, 2
+	};
+
+	real smdHeight = 1.15;
+	real smdWidth = 1.4;
+	distanceBetweenPadCentersHorizontally = 2.2;
+	distanceBetweenPadCentersVertically = 1.6;
+	numberOfPadColumns = 2;
+	numberOfPadRows = 2;
+	
+	setup();
+	
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + smdWidth;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + smdHeight;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placeSMDsCenteredAboutOrigin(partHeight, partWidth, smdHeight, smdWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	real keepoutOverhang = 0.1;
+
+	real top = partHeight / 2 + keepoutOverhang;
+	real left = -partWidth / 2 - keepoutOverhang;
+	real bottom = -top;
+	real right = -left	;
+		
+	drawRectangle(left, top, right, bottom, 0);
+
+	// Draw package outline
+
+	real caseHeight = 2.5;
+	real caseWidth = 3.2;
+
+	addCommand("layer tPlace");
+
+	real outset = 0.2;
+
+	top += outset;
+	left -= outset;
+	bottom -= outset;
+	right += outset;
+	
+	drawRectangle(left, top, right, bottom, minimumLineWidth);
+
+	real radius = 0.1;
+	real x = -2.6;
+	real y = -distanceBetweenPadCentersVertically / 2;
+
+	drawFilledCircle(x, y, 0.25);
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	x = 0;
+	y = ceilingTo(top, 1.0);
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+void createSMDsForSHT3xDIS() {
+	// Sensirion SHT3x-DIS https://datasheet.lcsc.com/lcsc/2106070104_Sensirion-SHT30-DIS-B10KS_C2687423.pdf
+	// Humidity and Temperature Sensor DFN-8
+
+// 	int padNumbers[] = {
+// 		1, 8,
+//		2, 7,
+//		3, 6,
+//		4, 5
+// 	};
+
+	distanceBetweenPadCentersHorizontally = 2.35;
+	distanceBetweenPadCentersVertically = 0.5;
+	numberOfPadColumns = 2;
+	numberOfPadRows = 4;
+	real smdHeight = 0.25;
+	real smdWidth = 0.55;
+	
+	setup();
+	
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + smdWidth;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + smdHeight;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+
+	placeSMDsCenteredAboutOrigin(partHeight, partWidth, smdHeight, smdWidth);
+	
+	// Draw custom die pad SMD
+	
+// 	addCommand("layer top");	// this is already the selected layer, but necessary
+
+	// start with a SMD
+
+	sprintf(cmd, "smd 0.5 0.5 'p$9' %s", point(0, 0));
+	addCommand(cmd);
+
+	// disable solder mask and solder paste autogeneration for this SMD
+	addCommand("change cream off (0 0)");
+	addCommand("change stop off (0 0)");
+	
+	// The polygon docs say don't use a small line width, so we'll use the minimumLineWidth
+	// and calculate accordingly.
+	
+	real diePadWidth = 1.0;
+	real diePadHeight = 1.7;
+	
+	real cornerInset = 0.3;
+	real top = diePadHeight / 2;
+	real bottom = -top;
+	real right = diePadWidth / 2;
+	real left = -right;
+
+	real halfMinimumLineWidth = minimumLineWidth / 2;
+
+	top -= halfMinimumLineWidth;
+	bottom += halfMinimumLineWidth;
+	left += halfMinimumLineWidth;
+	right -= halfMinimumLineWidth;
+
+	addCommand("set wire_bend 2");
+	
+	sprintf(cmd, "polygon %0.3f %s %s %s %s %s %s",
+		minimumLineWidth,
+		point(left + cornerInset, top),
+		point(right, top),
+		point(right, bottom),
+		point(left, bottom),
+		point(left, top - cornerInset),
+		point(left + cornerInset, top));
+	addCommand(cmd);
+
+	addCommand("layer tCream");
+	addCommand(cmd);
+	
+	// The default stop mask is 4mil and the default cream mask is 0mil. To see this,
+	// open the board editor and type the command drc then view the masks tab.
+	real stopMask = milToMm(4);
+
+	top += stopMask;
+	bottom -= stopMask;
+	left -= stopMask;
+	right += stopMask;
+
+	addCommand("layer tStop");
+	sprintf(cmd, "polygon %0.3f %s %s %s %s %s %s",
+		minimumLineWidth,
+		point(left + cornerInset, top),
+		point(right, top),
+		point(right, bottom),
+		point(left, bottom),
+		point(left, top - cornerInset),
+		point(left + cornerInset, top));
+	addCommand(cmd);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	real keepoutOverhang = 0.1;
+
+	real upperLeftX = -partWidth / 2 - keepoutOverhang;
+	real upperLeftY = partHeight / 2 + keepoutOverhang;
+	real lowerRightX = -upperLeftX;
+	real lowerRightY = -upperLeftY;
+		
+	drawRectangle(upperLeftX, upperLeftY, lowerRightX, lowerRightY, 0);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	real caseHeight = 2.5;
+	real caseWidth = 2.5;
+	real inset = 0.25;
+
+	left = -caseWidth / 2;
+	top = caseHeight / 2 + minimumLineWidth / 2;
+	bottom = -top;
+	right = -left;
+	
+	drawLine(minimumLineWidth, left, top, right, top);
+	drawLine(minimumLineWidth, right, top, right, top - inset);
+	drawLine(minimumLineWidth, right, bottom + inset, right, bottom);
+	drawLine(minimumLineWidth, right, bottom, left, bottom);
+	drawLine(minimumLineWidth, left, bottom, left, bottom + inset);
+	drawLine(minimumLineWidth, left, top - inset, left, top);
+
+	// place pin 1 designator
+	
+	drawFilledCircle(left - 0.3, top - inset / 2, 0.15);
+
+	// Draw labels
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	real x = 0;
+	real y = 1.5;
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+void createSMDsForSOD128() {
+// 	int padNumbers[] = {
+// 		1,
+// 		2
+// 	};
+
+	distanceBetweenPadCentersHorizontally = 0;
+	distanceBetweenPadCentersVertically = 4.40;
+	numberOfPadColumns = 1;
+	numberOfPadRows = 2;
+	real smdHeight = 1.4;
+	real smdWidth = 2.0;
+	
+	setup();
+	
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + smdWidth;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + smdHeight;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placeSMDsCenteredAboutOrigin(partHeight, partWidth, smdHeight, smdWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	real keepoutOverhang = 0.1;
+
+	real upperLeftX = -partWidth / 2 - keepoutOverhang;
+	real upperLeftY = partHeight / 2 + keepoutOverhang;
+	real lowerRightX = -upperLeftX;
+	real lowerRightY = -upperLeftY;
+		
+	drawRectangle(upperLeftX, upperLeftY, lowerRightX, lowerRightY, 0);
+
+	// Draw package outline
+
+	real caseHeight = 3.7;
+	real caseWidth = 2.5;
+	real lineWidth = 0.153;
+
+	addCommand("layer tPlace");
+	
+	real leftSMDLeftEdge = -smdWidth / 2;
+	real lineSpacingFromSMD = 0.2;
+	real leftSMDOutset = leftSMDLeftEdge - lineSpacingFromSMD;
+	real rightSMDOutset = leftSMDLeftEdge + smdWidth + lineSpacingFromSMD;
+
+	real startX = -caseWidth / 2;
+	real startY = caseHeight / 2;
+	real endX = leftSMDOutset;
+	real endY = startY;
+	
+	drawLine(lineWidth, startX, startY, endX, endY);
+	
+	endX = -startX;
+	startX = rightSMDOutset;
+
+	drawLine(lineWidth, startX, startY, endX, endY);
+
+	startX = endX;
+	endY = -startY;
+
+	drawLine(lineWidth, startX, startY, endX, endY);
+
+	endX = rightSMDOutset;
+	startY = endY;
+	
+	drawLine(lineWidth, startX, startY, endX, endY);
+
+	startX = leftSMDOutset;
+	endX = -caseWidth / 2;
+
+	drawLine(lineWidth, startX, startY, endX, endY);
+
+	startX = endX;
+	endY = caseHeight / 2;
+
+	drawLine(lineWidth, startX, startY, endX, endY);
+
+	real topPadBottomEdge = partHeight / 2 - smdHeight;
+	
+	startX = -caseWidth / 2;
+	endX = -startX;
+	startY = topPadBottomEdge - lineSpacingFromSMD;
+	endY = startY;
+	
+	drawLine(lineWidth, startX, startY, endX, endY);
+
+	startY -= lineWidth + lineSpacingFromSMD;
+	endY = startY;
+	
+	drawLine(lineWidth, startX, startY, endX, endY);
+
+	startY -= lineWidth + lineSpacingFromSMD;
+	endY = startY;
+
+	drawLine(lineWidth, startX, startY, endX, endY);
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	real x = 0;
+	real y = ceilingTo(partHeight / 2 + 0.254, 0.1);
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+void createSMDsForSOT223() {
+	// SOT223
+	// https://www.diodes.com/assets/Package-Files/SOT223.pdf
+
+// 	int padNumbers[] = {
+// 		1, 2, 3
+// 	};
+
+	setup();
+
+	int i;
+	real distanceBetweenPadCentersHorizontally = 2.3;
+	real distanceBetweenPadCentersVertically = 6.4;
+	real numberOfPadColumns = 3;
+	real numberOfPadRows = 2;
+
+	real bottomSMDHeight = 1.6;
+	real bottomSMDWidth = 1.2;
+	real topSMDHeight = 1.6;
+	real topSMDWidth = 3.3;
+	
+	real x = -distanceBetweenPadCentersHorizontally;
+	real y = -distanceBetweenPadCentersVertically / 2;
+
+	real caseHeight = 3.55;
+	real caseWidth = 6.55;
+
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + bottomSMDWidth;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + bottomSMDHeight / 2 + topSMDHeight / 2;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+
+	for (i = 1; i <= 3; ++i) {
+		sprintf(cmd, "smd %0.3f %0.3f 'p$%d' %s", bottomSMDWidth, bottomSMDHeight, i, point(x, y));
+		addCommand(cmd);
+		
+		x += distanceBetweenPadCentersHorizontally;
+	}
+
+	x = 0;
+	y = distanceBetweenPadCentersVertically / 2;
+
+	// pad 4 (tab) for reference:
+	sprintf(cmd, "smd %0.3f %0.3f 'p$%d' %s", topSMDWidth, topSMDHeight, 4, point(x, y));
+	addCommand(cmd);
+
+/*	
+	y = -y;
+	
+	// disable solder mask and solder paste autogeneration for this SMD
+// 	sprintf(cmd, "change cream off %s", point(0, y));
+// 	addCommand(cmd);
+	sprintf(cmd, "change stop off %s", point(0, y));
+	addCommand(cmd);
+
+	sprintf(cmd, "polygon %0.3f", minimumLineWidth);
+
+	real halfMinimumLineWidth = minimumLineWidth / 2;
+
+	x = -bottomSMDWidth / 2 + halfMinimumLineWidth;
+	y = -partHeight / 2 + halfMinimumLineWidth;
+	cmd += " " + point(x, y);
+	
+	x = -x;
+	cmd += " " + point(x, y);
+
+	y = -1.5 + halfMinimumLineWidth;
+	cmd += " " + point(x, y);
+
+	x = 3 - halfMinimumLineWidth;
+	cmd += " " + point(x, y);
+
+	y = 1.5 - halfMinimumLineWidth;
+	cmd += " " + point(x, y);
+
+	x = topSMDWidth / 2 - halfMinimumLineWidth;
+	cmd += " " + point(x, y);
+
+	y = (distanceBetweenPadCentersVertically + topSMDHeight) / 2 - halfMinimumLineWidth;
+	cmd += " " + point(x, y);
+
+	x = -x;
+	cmd += " " + point(x, y);
+
+	y = 1.5 - halfMinimumLineWidth;
+	cmd += " " + point(x, y);
+
+	x = -3 + halfMinimumLineWidth;
+	cmd += " " + point(x, y);
+
+	y = -1.5 + halfMinimumLineWidth;
+	cmd += " " + point(x, y);
+
+	x = -bottomSMDWidth / 2 + halfMinimumLineWidth;
+	cmd += " " + point(x, y);
+
+	y = -partHeight / 2 + halfMinimumLineWidth;
+	cmd += " " + point(x, y);
+
+	addCommand(cmd);
+
+// 	addCommand("layer tCream");
+// 	addCommand(cmd);
+
+	addCommand("layer tStop");
+
+	real stopMask = milToMm(4);
+
+	x = -bottomSMDWidth / 2 + halfMinimumLineWidth - stopMask;
+	y = -partHeight / 2 + halfMinimumLineWidth - stopMask;
+	cmd += " " + point(x, y);
+	
+	x = -x;
+	cmd += " " + point(x, y);
+
+	y = -1.5 + halfMinimumLineWidth - stopMask;
+	cmd += " " + point(x, y);
+
+	x = 3 - halfMinimumLineWidth + stopMask;
+	cmd += " " + point(x, y);
+
+	y = 1.5 - halfMinimumLineWidth + stopMask;
+	cmd += " " + point(x, y);
+
+	x = topSMDWidth / 2 - halfMinimumLineWidth + stopMask;
+	cmd += " " + point(x, y);
+
+	y = (distanceBetweenPadCentersVertically + topSMDHeight) / 2 - halfMinimumLineWidth + stopMask;
+	cmd += " " + point(x, y);
+
+	x = -x;
+	cmd += " " + point(x, y);
+
+	y = 1.5 - halfMinimumLineWidth + stopMask;
+	cmd += " " + point(x, y);
+
+	x = -3 + halfMinimumLineWidth - stopMask;
+	cmd += " " + point(x, y);
+
+	y = -1.5 + halfMinimumLineWidth - stopMask;
+	cmd += " " + point(x, y);
+
+	x = -bottomSMDWidth / 2 + halfMinimumLineWidth - stopMask;
+	cmd += " " + point(x, y);
+
+	y = -partHeight / 2 + halfMinimumLineWidth - stopMask;
+	cmd += " " + point(x, y);
+
+	addCommand(cmd);
+
+	
+	x = 0;
+	y = -y;
+*/
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	real keepoutOverhang = 0.1;
+
+	partHeight = partHeight;
+	partWidth = caseWidth + minimumLineWidth;
+
+	real upperLeftX = -partWidth / 2 - keepoutOverhang;
+	real upperLeftY = partHeight / 2 + keepoutOverhang;
+	real lowerRightX = -upperLeftX;
+	real lowerRightY = -upperLeftY;
+		
+	drawRectangle(upperLeftX, upperLeftY, lowerRightX, lowerRightY, 0);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+
+	upperLeftX = -caseWidth / 2 - keepoutOverhang;
+	upperLeftY = caseHeight / 2 + keepoutOverhang;
+	lowerRightX = -upperLeftX;
+	lowerRightY = -upperLeftY;
+
+	drawRectangle(upperLeftX, upperLeftY, lowerRightX, lowerRightY, minimumLineWidth);
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	x = 0;
+	y = ceilingTo(partHeight / 2 + 0.254, 0.1);
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+void createSMDsForSO23_6() {
+	int padNumbers[] = {
+		1, 6,
+		2, 5,
+		3, 4
+	};
+
+	distanceBetweenPadCentersHorizontally = 2.6;
+	distanceBetweenPadCentersVertically = 0.95;
+	numberOfPadColumns = 2;
+	numberOfPadRows = 3;
+	real smdHeight = 0.6;
+	real smdWidth = 1.1;
+	
+	setup();
+	
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + smdWidth;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + smdHeight;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placeSMDsCenteredAboutOrigin(partHeight, partWidth, smdHeight, smdWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	real keepoutOverhang = 0.1;
+
+	real left = -partWidth / 2 - keepoutOverhang;
+	real top = partHeight / 2 + keepoutOverhang;
+	real right = -left;
+	real bottom = -top;
+		
+	drawRectangle(left, top, right, bottom, 0);
+
+	// Draw package outline
+
+	real caseHeight = 3.05;
+	real caseWidth = 1.75;
+
+	addCommand("layer tPlace");
+
+	top = caseHeight / 2;
+	real inset = 0.08;
+	left = caseWidth / 2;
+	bottom = -top;
+	right = -left;
+	
+	drawLine(minimumLineWidth, left, top, right, top);
+	drawLine(minimumLineWidth, right, top, right, top - inset);
+	drawLine(minimumLineWidth, right, bottom + inset, right, bottom);
+	drawLine(minimumLineWidth, right, bottom, left, bottom);
+	drawLine(minimumLineWidth, left, bottom, left, bottom + inset);
+	drawLine(minimumLineWidth, left, top - inset, left, top);	
+
+	real x = -distanceBetweenPadCentersHorizontally / 2 + smdWidth / 2 + 0.3;
+	real y = distanceBetweenPadCentersVertically;
+
+	drawFilledCircle(x, y, 0.1);
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	x = 0;
+	y = ceilingTo(partHeight / 2 + 0.254, 0.1);
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+void createSMDsForSunconCapacitor() {
+	int padNumbers[] = {
+		2,
+		1
+	};
+
+	// from datasheet for CE-LX
+	// 470µF cap, diameter 16
+	
+	real C = 17.3;	// +/- 0.2mm
+	real P = 7.0;
+	real padding = 1;
+	real smdHeight = (C - P) / 2 + padding;
+	real smdWidth = 2.1 + padding;
+	distanceBetweenPadCentersVertically = P + smdHeight;
+	numberOfPadColumns = 1;
+	numberOfPadRows = 2;
+	
+	setup();
+	
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + smdWidth;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + smdHeight;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placeSMDsCenteredAboutOrigin(partHeight, partWidth, smdHeight, smdWidth);
+	
+	// 2: Define keepout region
+
+// 	addCommand("layer tKeepout");
+// 
+// 	real keepoutOverhang = 0.5;
+// 
+// 	real top = partHeight / 2 + keepoutOverhang;
+// 	real left = -partWidth / 2 - keepoutOverhang;
+// 	real bottom = -top;
+// 	real right = -left	;
+// 		
+// 	drawRectangle(left, top, right, bottom, 0);
+
+	// Draw package outline
+
+	addCommand("layer tPlace");
+	addCommand("set wire_bend 2");	// allow 45 degree lines
+
+	real caseWidth = 16.5;
+	real caseHeight = 16.5;
+	real top = caseHeight / 2;
+	real left = -caseWidth / 2;
+	real bottom = -top;
+	real right = -left	;
+
+	real xMin = smdWidth / 2 + 0.5;
+	real inset = 3.0;
+	
+	// draw case outline
+	drawLine(minimumLineWidth, left, top, -xMin, top);
+	drawLine(minimumLineWidth, xMin, top, right, top);
+	drawLine(minimumLineWidth, right, top, right, bottom + inset);
+	drawLine(minimumLineWidth, right, bottom + inset, right - inset, bottom);
+	drawLine(minimumLineWidth, right - inset, bottom, xMin, bottom);
+	drawLine(minimumLineWidth, -xMin, bottom, left + inset, bottom);
+	drawLine(minimumLineWidth, left + inset, bottom, left, bottom + inset);
+	drawLine(minimumLineWidth, left, bottom + inset, left, top);
+
+	// draw minus
+	real minusInset = 1.0;
+	real x = 0;
+	real y = P / 2 - minusInset + minimumLineWidth / 2;
+	real minusLength = 1.0;
+	real halfMinusLength = minusLength / 2;
+	
+	drawLine(minimumLineWidth, x - halfMinusLength, y, x + halfMinusLength, y);
+	drawLine(minimumLineWidth, x - halfMinusLength, -y, x + halfMinusLength, -y);
+	drawLine(minimumLineWidth, x, -y + halfMinusLength, x, -y - halfMinusLength);
+
+	addCommand("layer tNames");
+	addCommand("change align top-left");
+	
+	x = floorTo(left + 0.5, 0.5);
+	y = ceilingTo(top - 0.5, 0.5);
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-right");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(-x, y));
+	addCommand(cmd);
+}
+
+void createSMDsForTXC7V12000018() {
+	int padNumbers[] = {
+		4, 3,
+		1, 2
+	};
+
+	real smdHeight = 1.2;
+	real smdWidth = 1.4;
+	distanceBetweenPadCentersHorizontally = 0.8 + smdWidth;
+	distanceBetweenPadCentersVertically = 0.5 + smdHeight;
+	numberOfPadColumns = 2;
+	numberOfPadRows = 2;
+	
+	setup();
+	
+	real partWidth = distanceBetweenPadCentersHorizontally * (numberOfPadColumns - 1) + smdWidth;
+	real partHeight = distanceBetweenPadCentersVertically * (numberOfPadRows - 1) + smdHeight;
+
+	printf("partWidth %f, height %f\n", partWidth, partHeight);
+
+	// 1: Place Pads
+	placeSMDsCenteredAboutOrigin(partHeight, partWidth, smdHeight, smdWidth);
+	
+	// 2: Define keepout region
+
+	addCommand("layer tKeepout");
+
+	real keepoutOverhang = 0.1;
+
+	real top = partHeight / 2 + keepoutOverhang;
+	real left = -partWidth / 2 - keepoutOverhang;
+	real bottom = -top;
+	real right = -left	;
+		
+	drawRectangle(left, top, right, bottom, 0);
+
+	// Draw package outline
+
+	real caseHeight = 2.5;
+	real caseWidth = 3.2;
+
+	addCommand("layer tPlace");
+
+	real outset = 0.2;
+
+	top += outset;
+	left -= outset;
+	bottom -= outset;
+	right += outset;
+	
+	drawRectangle(left, top, right, bottom, minimumLineWidth);
+
+	real radius = 0.1;
+	real x = -2.6;
+	real y = -distanceBetweenPadCentersVertically / 2;
+
+	drawFilledCircle(x, y, 0.25);
+
+	addCommand("layer tNames");
+	addCommand("change align bottom-center");
+	
+	x = 0;
+	y = ceilingTo(top, 1.0);
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	addCommand("layer tValues");
+	addCommand("change align top-center");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+void createPadsForXKB_DC_005B() {
+	// https://datasheet.lcsc.com/lcsc/1811141818_XKB-Connectivity-DC-005B-2.5A-2.0_C319132.pdf
+
+	real partLength = 14.4;
+	real partWidth = 9.0;
+	real bottom = -partWidth / 2;
+	real left = -partLength / 2;
+	real right = -left;
+	real top = -bottom;
+	
+	selectLayer(LAYER_TKEEPOUT);
+	drawRectangle(left, top, right, bottom, 0);
+	
+	real openingExtent = 1.5;
+	selectLayer(LAYER_TPLACE);
+	drawLine(minimumLineWidth, left, top, right, top);
+	drawLine(minimumLineWidth, right, top, right, top - openingExtent);
+	drawLine(minimumLineWidth, right, bottom + openingExtent, right, bottom);
+	drawLine(minimumLineWidth, right, bottom, left, bottom);
+	drawLine(minimumLineWidth, left, bottom, left, top);
+
+	selectLayer(LAYER_MILLING);
+
+	// draw pin 1
+	real pinHeight = 3.5;
+	real pinWidth = 1.0;
+	real pinCenterX = right - 13.7;
+	real pinCenterY = 0;
+	real upperX = pinCenterX - pinWidth / 2;
+	real upperY = pinHeight / 2;
+	real lowerX = upperX + pinWidth;
+	real lowerY = upperY - pinHeight;
+	real padDiameter = 2.5;
+
+
+	sprintf(cmd, "change drill %0.03f", pinWidth);
+	addCommand(cmd);
+
+	drawRectangle(upperX, upperY, lowerX, lowerY, 0);
+	
+	sprintf(cmd, "pad %0.03f long R90 'p$1' %s", padDiameter, point(pinCenterX, pinCenterY));
+	addCommand(cmd);
+
+	pinHeight = 3;
+	pinCenterX += 6.0;
+	upperX = pinCenterX - pinWidth / 2;
+	upperY = pinHeight / 2;
+	lowerX = upperX + pinWidth;
+	lowerY = upperY - pinHeight;
+
+	drawRectangle(upperX, upperY, lowerX, lowerY, 0);
+
+	sprintf(cmd, "pad %0.03f long R90 'p$2' %s", padDiameter, point(pinCenterX, pinCenterY));
+	addCommand(cmd);
+
+	pinHeight = 1.0;
+	pinWidth = 3.0;
+	pinCenterX = right - 10.7;
+	pinCenterY = 4.7;
+	upperX = pinCenterX - pinWidth / 2;
+	upperY = pinCenterY + pinHeight / 2;
+	lowerX = upperX + pinWidth;
+	lowerY = upperY - pinHeight;
+	
+	drawRectangle(upperX, upperY, lowerX, lowerY, 0);
+
+	selectLayer(LAYER_TKEEPOUT);
+
+	drawRectangle(upperX, upperY, lowerX, lowerY, 0);
+	
+	sprintf(cmd, "pad %0.03f long 'p$3' %s", padDiameter, point(pinCenterX, pinCenterY));
+	addCommand(cmd);
+
+	selectLayer(LAYER_TNAMES);
+
+	addCommand("change align top-right");
+	
+	real x = 6.5;
+	real y = 4.0;
+	
+	sprintf(cmd, "text '>NAME' %s", point(x, y));
+	addCommand(cmd);
+
+	selectLayer(LAYER_TVALUES);
+	addCommand("change align bottom-right");
+	
+	sprintf(cmd, "text '>VALUE' %s", point(x, -y));
+	addCommand(cmd);
+}
+
+int main() {
+	output("/tmp/padPlacer.log", "wt") {
+//		Pad Footprints:
+// 		createPadsForAishiCapacitor(13, 5, 0.6);
+// 		createPadsForCUIDevices_PDQE30_D();
+// 		createPadsForHRO_K3_1204D();
+// 		createPadsForJSTXH();
+// 		createPadsForNichiconCapacitor();
+// 		createPadsForXKB_DC_005B();
+
+//		SMD Footprints:
+// 		createSMDsFor0402();
+// 		createSMDsFor0402Polarized();
+//		createSMDsFor0603();
+//		createSMDsFor0603Polarized();
+// 		createSMDsFor1210Polarized();
+// 		createSMDsForAVXCapacitor();
+// 		createSMDsForBSMD1812();
+// 		createSMDsForEL357N();
+//		createSMDsForLQFP64();
+// 		createSMDsForMOC3063();
+//  		createSMDsForSeikoFA238V();
+// 		createSMDsForSHT3xDIS();
+// 		createSMDsForSOD128();
+//  	createSMDsForSOT223();
+		createSMDsForSO23_6();
+// 		createSMDsForSunconCapacitor();
+// 		createSMDsForTXC7V12000018();
+
+		selectLayer(LAYER_TOP);
+
+		Exit();	
+	}
+
+	return 0;
+}

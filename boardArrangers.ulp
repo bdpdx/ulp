@@ -1,0 +1,851 @@
+#include "boardUtilities.ulp"
+
+/*
+	to reset all labels on the board, select all (cmd-a)
+	(optional?) right click and create a new group and add all objects to it
+	select the reposition attributes tool
+	hold ctrl and right click then select "Reposition: Group"
+	(optional?) if group was created, go to design manager -> browser -> view menu -> [Groups], then ungroup the group just made
+	
+	or select all and type reposition (>0 0)	
+*/
+
+real cuiDevicesTerminalBlockHorizontalDistanceBetweenPins = 5.08;
+real cuiDevicesTerminalBlockPin1OffsetX = 2.6;
+real cuiDevicesTerminalBlockHeight = 14.05;
+
+real cuiDevicesTerminalBlockWidth(int numberOfTerminals) {
+	return 5.08 * numberOfTerminals + 2.5;	// from datasheet
+}
+
+real esp32Height = 31.5;
+real esp32Width = 19.2;
+real j4OffsetX = 10;
+real j4OffsetY = 1;
+real mountingHoleDiameter = 7.366; // diameter includes keepout
+real mountingHoleInset = 4.5;
+
+void arrangeAtlasDevices() {
+	// parts layout is left to right
+	// U44 is conductivity, U45 is ph, U46 is temperature
+	string parts[] = { "U44", "U45", "U46" };
+
+	real distanceToMountingHole = 1;
+	real partHeight = 39.2;
+	real partWidth = 18.4;
+	real xOffset = ceil(partWidth);
+//  	real x = boardWidth - mountingHoleInset - mountingHoleDiameter / 2 - distanceToMountingHole - partWidth / 2;
+	real x = 104;
+	real y = boardHeight - minimumBoardEdgeMargin - partHeight / 2;
+	
+	for (int i = 3; i--;) {
+		rotate(parts[i], 180);
+		move(parts[i], x, y);
+		x -= xOffset;
+	}
+	
+	rotate("R156", 270);
+	move("R156", 92.5, 112);
+}
+
+void arrangeESP32Step1() {
+}
+	
+void arrangeESP32Step2() {
+// 	addCommand("ripup");
+
+	// move ESP32
+	move("U4", 130, 118.5);
+	addVia("GND", 131.68, 142.5);
+	addVia("3.3V", 131.68, 141.2);
+	addVia("GND", 131.68, 124.7);
+	addVia("GND", 146.37, 142.5);
+	
+	// all parts attached to esp32:
+	rotate("C9", 90);
+	move("C9", 128.5, 141.5);
+	addVia("GND", 127.28, 142.25);
+
+	rotate("C10", 90);
+	move("C10", 126, 141.5);
+	addVia("GND", 124.82, 142.25);
+	addVia("3.3V", 124.82, 140.7);
+	
+	rotate("C11", 270);
+	move("C11", 128.5, 138.5);
+	addVia("GND", 127.28, 137.72);
+
+	rotate("R10", 90);
+	move("R10", 126, 138.5);
+	addVia("3.3V", 124.82, 139);
+
+
+	rotate("LED5", 90);
+	move("LED5", 128.5, 135.5);
+
+ 	rotate("R16", 90);
+	move("R16", 126, 135.5);
+	addVia("3.3V", 124.82, 136);
+
+	rotate("LED4", 90);
+	move("LED4", 128.5, 132.5);
+
+ 	rotate("R15", 90);
+	move("R15", 126, 132.5);
+	addVia("3.3V", 124.82, 133);
+
+	rotate("R14", 180);
+	move("R14", 128, 130);
+	addVia("3.3V", 126.4, 130);	
+
+	rotate("R9", 180);
+	move("R9", 128, 127.5);
+	addVia("3.3V", 126.4, 127.5);	
+
+	rotate("R8", 180);
+	move("R8", 128, 125);
+	addVia("3.3V", 126.4, 125);	
+
+ 	rotate("R11", 180);
+	move("R11", 128, 122.5);
+	addVia("3.3V", 126.4, 122.5);
+
+ 	rotate("R13", 180);
+	move("R13", 128, 120);
+	addVia("3.3V", 126.4, 120);
+
+
+	move("SW2", 118, 146.5);
+	addVia("GND", 115.3, 148);
+	move("SW3", 124, 146.5);
+	addVia("GND", 121.3, 148);
+	
+	// power leds
+	rotate("LED1", 180);
+	move("LED1", 121, 140.5);
+
+	rotate("LED2", 180);
+	move("LED2", 121, 138);
+
+	rotate("LED3", 180);
+	move("LED3", 121, 135.5);
+
+	rotate("R1", 180);
+	move("R1", 118, 140.5);
+	addVia("GND", 116, 140.5);
+
+	rotate("R2", 180);
+	move("R2", 118, 138);
+	addVia("GND", 116, 138);
+
+	rotate("R3", 180);
+	move("R3", 118, 135.5);
+	addVia("GND", 116, 135.5);
+	
+	// switch caps
+	rotate("C30", 180);
+	move("C30", 118, 143);
+	addVia("GND", 116.25, 143);
+
+	rotate("C31", 180);
+	move("C31", 121, 143);
+	addVia("GND", 120.43, 144.1);
+	
+	move("IMG1", 129, 23.5);
+	move("IMG2", 129, 23.5);
+	addCommand("mirror IMG2");
+}
+
+void arrangeAutoProgrammer() {
+	move("Q2", 139, 114.5);
+	move("R12", 139, 112);
+	rotate("R7", 180);
+	move("R7", 139, 110);
+	rotate("Q3", 180);
+	move("Q3", 139, 107.5);
+}
+
+void arrangeLevelShifter(string q, real qx, real qy, string r33v, string r5v) {
+	move(q, qx, qy);
+// 	swap0402Label(r33v);
+	rotate(r33v, 90);
+	move(r33v, qx - 2.5, qy);
+	addVia("3.3V", qx - 2.5, qy + 1.5);
+	rotate(r5v, 270);
+	move(r5v, qx + 2.5, qy);
+	addVia("3.3V", qx - 1, qy + 0.25);
+}
+
+void arrangeLevelShifters() {
+	real x = 59;
+	real xOffset = 8.5;
+	arrangeLevelShifter("Q4", x, 107.5, "R22", "R23");
+	arrangeLevelShifter("Q5", x += xOffset, 107.5, "R24", "R25");
+	arrangeLevelShifter("Q6", x += xOffset, 107.5, "R26", "R27");
+	arrangeLevelShifter("Q7", x += xOffset, 107.5, "R28", "R29");
+	arrangeLevelShifter("Q24", x += xOffset, 107.5, "R152", "R153");
+	arrangeLevelShifter("Q25", x += xOffset, 107.5, "R154", "R155");
+	arrangeLevelShifter("Q26", x += xOffset, 107.5, "R157", "R158");
+}
+
+void arrangePumpControl(string opto, real ox, real oy, string q, string rA, string rB, int vertical) {
+	move(opto, ox, oy);
+
+	if (vertical) {
+		rotate(opto, 90);
+		rotate(rA, 270);
+		move(rA, ox + 1, oy - 5.5);
+
+		move(rB, ox - 1, oy - 5);
+	
+		rotate(q, 270);
+		move(q, ox - 0.6, oy - 7.5);
+	
+		addVia("GND", ox - 0.5, oy - 8.5);
+	} else {
+		rotate(rA, 180);
+		move(rA, ox - 5.5, oy - 1);
+
+		rotate(rB, 270);
+		move(rB, ox - 5, oy + 1);
+	
+		rotate(q, 180);
+		move(q, ox - 7.5, oy + 0.6);
+	
+		addVia("GND", ox - 8.5, oy + 0.5);
+	}
+}
+
+void arrangePumpControls() {
+	real x = 18;
+	real y = 18.5;
+	real xOffset = 14;
+
+	arrangePumpControl("Q8", 4, 10.5, "Q12", "R126", "R134", 1);
+	arrangePumpControl("Q9", x, y, "Q13", "R127", "R135", 0);
+	arrangePumpControl("Q10", x += xOffset, y, "Q14", "R128", "R136", 0);
+	arrangePumpControl("Q11", x += xOffset, y, "Q15", "R129", "R137", 0);
+	arrangePumpControl("Q16", x += xOffset, y, "Q20", "R138", "R146", 0);
+	arrangePumpControl("Q17", x += xOffset, y, "Q21", "R139", "R147", 0);
+	arrangePumpControl("Q18", x += xOffset, y, "Q22", "R140", "R148", 0);
+	arrangePumpControl("Q19", 146.5, 10.5, "Q23", "R141", "R149", 1);
+}
+
+void arrangeShiftRegister(string u, real x, real y, string c) {
+	move(u, x, y);
+	rotate(c, 270);
+	move(c, x - 6.5, y + 2);
+	
+	addPowerVia("GND", x - 6.5, y);
+	addPowerVia("GND", x + 4.4	, y - 1.5);
+}
+
+void arrangeShiftRegisters() {
+	real x = 18;
+	real xOffset = 17;
+	real y = 28;
+
+	arrangeShiftRegister("U7", x, y, "C33");
+	arrangeShiftRegister("U8", x += xOffset, y, "C34");
+	arrangeShiftRegister("U9", x += xOffset, y, "C35");
+	arrangeShiftRegister("U10", x += xOffset, y, "C36");
+	arrangeShiftRegister("U11", x += xOffset, y, "C37");
+}
+
+void arrangeESP32Step3() {
+
+}
+
+void arrangeESP32Step4() {
+
+}
+
+string findMOC3063Neighbors(UL_ELEMENT moc3063) {
+	string result;
+
+	if (!project.schematic) {
+		printf("please open a schematic\n");
+		return result;
+	}
+
+	string gateResistor;
+	string led;
+	string pin1Net, pin2Net, pin6Net;
+	string triacName;
+	
+	project.schematic(s) {
+		s.allnets(n) {
+			n.pinrefs(p) {
+				if (strcmp(p.part.name, moc3063.name)) continue;
+
+				switch (strtol(p.pin.name)) {
+					case 1:		pin1Net = n.name;	break;
+					case 2:		pin2Net = n.name;	break;
+					case 6:		pin6Net = n.name;	break;
+				}
+
+				if (pin1Net && pin2Net && pin6Net) break;
+			}
+		}
+		
+		s.allnets(n) {
+			if (!strcmp(n.name, pin2Net)) {
+				// the net between Pin 2 and the indicator LED is anonymous and
+				// nothing else is connected to this net
+				n.pinrefs(p) {
+					if (strcmp(p.part.name, moc3063.name)) {
+// 						printf("found LED %s connected via %s to moc3063 %s\n", p.part.name, n.name, moc3063.name);
+						led = p.part.name;
+					}
+				}
+			} else if (!strcmp(n.name, pin6Net)) {
+				// the net between Pin 6 and the triac gate resistor is anonymous and
+				// nothing else is connected to this net
+				n.pinrefs(p) {
+					if (strcmp(p.part.name, moc3063.name)) {
+// 						printf("found resistor %s connected via %s to moc3063 %s\n", p.part.name, n.name, moc3063.name);
+						gateResistor = p.part.name;
+					}
+				}
+			}
+			
+			if (led && gateResistor) break;
+		}
+		
+		string triacNet;
+		
+		s.allnets(n) {
+			n.pinrefs(p) {
+				if (strcmp(p.part.name, gateResistor)) continue;
+				if (strcmp(n.name, pin6Net)) {
+					triacNet = n.name;
+// 					printf("triac net is %s\n", triacNet);
+					break;
+				}
+			}
+			
+			if (triacNet) break;
+		}
+		
+		s.allnets(n) {
+			if (strcmp(n.name, triacNet)) continue;
+			
+			n.pinrefs(p) {
+				if (strcmp(p.part.name, gateResistor)) {
+					triacName = p.part.name;
+// 					printf("triac name is %s\n", triacName);
+					break;
+				}
+			}
+			
+			if (triacName) break;
+		}
+	}
+	
+	result = gateResistor + "," + led + "," + pin1Net + "," + triacName;
+	
+	return result;
+}
+
+void arrangeSolenoidTriggerComponentsPart1() {
+	// rotate solenoid triacs 90
+	string partNames = partNamesWithPrefixInRangeSeparatedByNewline("T", 1, 32);
+	
+	rotateParts(partNames, 90);
+}
+
+void arrangeSolenoidTriggerComponentsPart2() {
+// 	addCommand("ripup");
+	int columns = 8;
+	int rows = 4;
+
+	real moc3063CenterX = 13; // align left edge with terminal blocks
+	real moc3063CenterY = 100;
+
+	real gateResistorOffsetX = 4.7;
+	real gateResistorOffsetY = 2;
+	real triacOffsetX = 6.5;
+	real triacOffsetY = -1;
+	real ledResistorOffsetX = 4.7;
+	real ledResistorOffsetY = -2;
+	real columnOffsetX = 17.5;
+	real rowOffsetY = -12;
+	real moc24VACViaOffsetX = 4.4;
+	real moc24VACViaOffsetY = 4.5;
+	real triac24VACViaOffsetX = 5.5;
+	real triac24VACViaOffsetY = 0;
+
+	int moc3063BasePartNumber = 12;
+
+	for (int i = 0; i < columns; ++i) {
+		for (int j = 0; j < rows; ++j) {
+			string moc3063Name;
+			sprintf(moc3063Name, "U%d", moc3063BasePartNumber++);
+		
+			UL_ELEMENT moc3063 = findBoardPartNamed(moc3063Name);
+			string neighborsString = findMOC3063Neighbors(moc3063);
+			string neighbors[];
+
+			if (strsplit(neighbors, neighborsString, ',') != 4) {
+				printf("neighbors of %s:%s not found\n", moc3063.name, moc3063.value);
+				return;
+			}
+
+			UL_ELEMENT gateResistor = findBoardPartNamed(neighbors[0]);
+			UL_ELEMENT ledResistor = findBoardPartNamed(neighbors[1]);
+			UL_ELEMENT triac = findBoardPartNamed(neighbors[3]);
+		
+			real moc3063x = moc3063CenterX + i * columnOffsetX;
+			real moc3063y = moc3063CenterY + j * rowOffsetY;
+
+			move(moc3063Name, moc3063x, moc3063y);
+			
+			rotate(ledResistor.name, 270);
+			move(ledResistor.name, moc3063x + ledResistorOffsetX, moc3063y + ledResistorOffsetY);
+			addVia("GND", moc3063x + ledResistorOffsetX, moc3063y);
+
+			move(triac.name, moc3063x + triacOffsetX, moc3063y + triacOffsetY);
+			addPowerVia("24VAC+", moc3063x + triacOffsetX + triac24VACViaOffsetX, moc3063y + triacOffsetY + triac24VACViaOffsetY);
+			
+			rotate(gateResistor.name, 270);
+			move(gateResistor.name, moc3063x + gateResistorOffsetX, moc3063y + gateResistorOffsetY);
+
+			addPowerVia("24VAC+", moc3063x + moc24VACViaOffsetX, moc3063y + moc24VACViaOffsetY);
+
+//  			addCommand("lock " + moc3063Name);
+//  			addCommand("lock " + ledResistor.name);
+//  			addCommand("lock " + triac.name);
+//  			addCommand("lock " + gateResistor.name);
+		}
+	}
+}
+
+void arrangeLevelShiftersPart1() {
+	rotate("R10", 90);
+	rotate("R12", 90);
+	rotate("R14", 90);
+	rotate("R107", 90);
+	rotate("R109", 90);
+	rotate("R105", 180);
+	rotate("R106", 180);
+}
+
+void arrangeLevelShiftersPart2() {
+	real x = 88.5;
+	real y = 146.5;
+	
+	move("Q4", x, y);
+	move("R10", x + 2.5, y - 0.5);
+	move("R11", x + 1.5, y + 1.5);
+
+	y -= 5;
+	
+	move("Q5", x, y);
+	move("R12", x + 2.5, y - 0.5);
+	move("R13", x + 1.5, y + 1.5);
+
+	y -= 5;
+	
+	move("Q6", x, y);
+	move("R14", x + 2.5, y - 0.5);
+	move("R15", x + 1.5, y + 1.5);
+
+	y -= 13.2;
+	
+	move("Q23", x, y);
+	move("R107", x + 2.5, y - 0.5);
+	move("R108", x + 1.5, y + 1.5);
+
+	y -= 5;
+	
+	move("Q24", x, y);
+	move("R109", x + 2.5, y - 0.5);
+	move("R110", x + 1.5, y + 1.5);
+}
+
+void arrange33VLDO() {
+	rotate("C3", 270);
+	rotate("C4", 270);
+	rotate("U2", 90);	// U2 is 3.3V LDO
+
+	real x = 117;
+	real y = 130;
+	
+	move("U2", x, y);
+	x += 5;
+	y += 2;
+	move("C3", x, y);
+	y -= 3.5;
+	move("C4", x, y);
+
+	addPowerVia("3.3V", 115.5, 130);
+	addPowerVia("3.3V", 118.5, 130);
+	addPowerVia("3.3V", 123.5, 129);
+
+	// heat sink connections
+	addPowerVia("3.3V", 66, 129.9);
+	addPowerVia("3.3V", 85, 129.9);
+	addPowerVia("3.3V", 104, 129.9);
+
+	addPowerVia("GND", 118.5, 127.75);
+	addPowerVia("GND", 123.5, 131.5);
+	addPowerVia("GND", 122, 126.5);
+}
+
+void arrangeConnectors() {
+	rotate("J4", 90);
+	rotate("J5", 90);
+	rotate("J6", 90);
+	rotate("J7", 90);
+	rotate("J8", 90);
+
+	real x = 3.5;
+	real y = 102;
+
+	move("J3", 33.5, 111);	
+	move("J4", x, y);
+	move("J5", x, y -= 11);
+	move("J6", x, y -= 9.8);
+	move("J7", x, y -= 11);
+	move("J8", x, y -= 11);
+	
+	// display cap
+	rotate("C27", 90);
+	move("C27", 7.5, 99);
+	addVia("GND", 7.5, 102);
+
+	move("C12", 10, 109.5);
+	addVia("GND", 8, 109.5);
+	
+	rotate("C13", 180);
+	move("C13", 10, 112.5);
+	addVia("GND", 8, 112.5);
+	
+	// new stuff?
+	rotate("C14", 0.000);
+	move("C14", 128.000, 110.750);
+	rotate("C15", 90.000);
+	move("C15", 122.000, 123.000);
+	rotate("C16", 270.000);
+	move("C16", 124.500, 122.000);
+
+	move("C17", 111.000, 115.750);
+	rotate("C18", 270.000);
+	move("C18", 111.500, 111.500);
+	rotate("C19", 180.000);
+	move("C19", 120.500, 106.500);
+	rotate("C20", 180.000);
+	move("C20", 127.000, 113.500);
+	rotate("C21", 90.000);
+	move("C21", 118.000, 123.000);
+	rotate("C22", 90.000);
+	move("C22", 115.500, 122.000);
+	rotate("C23", 0.000);
+	move("C23", 126.000, 107.000);
+	rotate("C24", 270.000);
+	move("C24", 124.500, 119.500);
+	rotate("C25", 0.000);
+	move("C25", 116.500, 106.500);
+	rotate("C26", 270.000);
+	move("C26", 114.000, 122.000);
+	rotate("C28", 0.000);
+	move("C28", 133.250, 110.500);
+	rotate("C29", 180.000);
+	move("C29", 135.000, 116.500);
+	rotate("C32", 180.000);
+	move("C32", 147.500, 117.500);
+	rotate("FB1", 270.000);
+	move("FB1", 124.500, 124.750);
+	rotate("FB2", 270.000);
+	move("FB2", 115.500, 124.750);
+	rotate("R17", 180.000);
+	move("R17", 127.000, 118.000);
+	rotate("R18", 180.000);
+	move("R18", 127.000, 116.500);
+	rotate("R19", 180.000);
+	move("R19", 127.000, 115.000);
+	rotate("R20", 180.000);
+	move("R20", 129.500, 116.500);
+	rotate("R21", 0.000);
+	move("R21", 129.500, 115.000);
+	rotate("R22", 0.000);
+	move("R22", 570.000, -25.000);
+	rotate("R23", 0.000);
+	move("R23", 595.000, -25.000);
+	rotate("R24", 0.000);
+	move("R24", 620.000, -25.000);
+	rotate("R25", 0.000);
+	move("R25", 645.000, -25.000);
+	rotate("R26", 0.000);
+	move("R26", 670.000, -25.000);
+	rotate("R27", 0.000);
+	move("R27", 195.000, -50.000);
+	rotate("R28", 0.000);
+	move("R28", 220.000, -50.000);
+	rotate("R29", 0.000);
+	move("R29", 245.000, -50.000);
+	rotate("R126", 0.000);
+	move("R126", 670.000, -150.000);
+	rotate("R127", 0.000);
+	move("R127", 195.000, -175.000);
+	rotate("R128", 0.000);
+	move("R128", 220.000, -175.000);
+	rotate("R129", 0.000);
+	move("R129", 245.000, -175.000);
+	rotate("R134", 0.000);
+	move("R134", 370.000, -175.000);
+	rotate("R135", 0.000);
+	move("R135", 395.000, -175.000);
+	rotate("R136", 0.000);
+	move("R136", 420.000, -175.000);
+	rotate("R137", 0.000);
+	move("R137", 445.000, -175.000);
+	rotate("R138", 0.000);
+	move("R138", 470.000, -175.000);
+	rotate("R139", 0.000);
+	move("R139", 495.000, -175.000);
+	rotate("R140", 0.000);
+	move("R140", 520.000, -175.000);
+	rotate("R141", 0.000);
+	move("R141", 545.000, -175.000);
+	rotate("R146", 0.000);
+	move("R146", 670.000, -175.000);
+	rotate("R147", 0.000);
+	move("R147", 195.000, -200.000);
+	rotate("R148", 0.000);
+	move("R148", 220.000, -200.000);
+	rotate("R149", 0.000);
+	move("R149", 245.000, -200.000);
+	rotate("R152", 0.000);
+	move("R152", 320.000, -200.000);
+	rotate("R153", 0.000);
+	move("R153", 345.000, -200.000);
+	rotate("R154", 0.000);
+	move("R154", 370.000, -200.000);
+	rotate("R155", 0.000);
+	move("R155", 395.000, -200.000);
+	rotate("R156", 270.000);
+	move("R156", 92.500, 112.000);
+	rotate("R157", 0.000);
+	move("R157", 445.000, -200.000);
+	rotate("R158", 0.000);
+	move("R158", 470.000, -200.000);
+	rotate("U5", 270.000);
+	move("U5", 119.000, 114.000);
+	rotate("U6", 0.000);
+	move("U6", 145.000, 111.000);
+	rotate("U7", 90.000);
+	move("U7", 17.000, 29.000);
+	rotate("U8", 90.000);
+	move("U8", 28.500, 29.000);
+	rotate("U9", 90.000);
+	move("U9", 40.000, 29.000);
+	rotate("U10", 90.000);
+	move("U10", 51.500, 29.000);
+	rotate("U11", 90.000);
+	move("U11", 63.000, 29.000);
+	rotate("X1", 0.000);
+	move("X1", 134.000, 113.500);
+}
+
+void arrangeDCDCSupply() {
+	rotate("F1", 90);
+	move("F1", 11, 144.5);
+	addPowerVia("24VAC+", 11, 145);
+
+	rotate("C6", 90);
+	move("C6", 14.75, 143.5);
+	addPowerVia("GND", 14.75, 147);
+
+	move("D1", 14.75, 127.5);
+	move("SW1", 5.5, 127);
+	
+	rotate("Q1", 180);
+	move("Q1", 14.75, 122.5);
+
+	rotate("C7", 90);
+	move("C7", 10, 123.5);
+	addVia("GND", 10, 125.5);
+	
+	rotate("C8", 90);
+	move("C8", 12, 123.5);
+	addVia("GND", 12, 125.5);
+	
+	rotate("R5", 180);
+	move("R5", 10.5, 121);
+	addVia("GND", 12.25, 121);
+
+	rotate("R6", 180);
+	move("R6", 10.5, 118.5);
+	addVia("GND", 12.25, 118.5);
+
+	rotate("D2", 180);
+	move("D2", 14, 117.5);
+	addVia("GND", 15.5, 117.5);
+
+	rotate("D3", 180);
+	move("D3", 14, 120);
+	addVia("GND", 15.5, 120);
+
+	rotate("D4", 180);
+	move("D4", 14, 119);
+	addVia("GND", 15.5, 119);
+
+	rotate("J1", 180);
+	move("J1", 7.5, 136);
+
+	rotate("J2", 270);
+	move("J2", 3, 120);
+	
+	rotate("U1", 180);
+	move("U1", 29.5, 121);
+	move("U3", 29.5, 136.5);
+
+	rotate("R4", 90);
+	move("R4", 19, 121);
+	addVia("GND", 19, 119.5);
+	
+	move("C1", 49.5, 143);
+	move("C2", 49.5, 129);
+	rotate("C5", 315);
+	move("C5", 43, 119.5);
+}
+
+void arrangeShiftRegistersPart1() {
+	swap0603Label("C11");
+	rotate("C11", 270);
+	rotate("C12", 270);
+	rotate("C13", 270);
+	rotate("C14", 270);
+	rotate("C15", 270);
+	rotate("U6", 90);
+	rotate("U7", 90);
+	rotate("U8", 90);
+	rotate("U9", 90);
+	rotate("U10", 90);
+}
+
+void arrangeShiftRegistersPart2() {
+	real x = 37;
+	real y = 104.5;
+
+	for (int i = 6; i <= 10; ++i) {
+		string cPart, uPart;
+		sprintf(uPart, "U%d", i);
+		sprintf(cPart, "C%d", i + 5);
+	
+		move(uPart, x, y);
+		move(cPart, x - 6.5, y + 2.1);
+		
+		x += 16.5;
+	}
+}
+
+void arrangePumpSwitchesPart1() {
+	rotate("Q11", 180);
+	rotate("Q12", 180);
+	rotate("Q13", 180);
+	rotate("Q14", 180);
+
+	rotate("Q19", 180);
+	rotate("Q20", 180);
+	rotate("Q21", 180);
+	rotate("Q22", 180);
+
+	rotate("R80", 180);
+	rotate("R81", 180);
+	rotate("R82", 180);
+	rotate("R83", 180);
+	rotate("R92", 180);
+	rotate("R93", 180);
+	rotate("R94", 180);
+	rotate("R95", 180);
+	
+	rotate("R88", 270);
+	rotate("R89", 270);
+	rotate("R90", 270);
+	rotate("R91", 270);
+	rotate("R100", 270);
+	rotate("R101", 270);
+	rotate("R102", 270);
+	rotate("R103", 270);
+
+}
+
+void arrangeHumiditySensor() {
+	real x = 106.5;
+	real y = 24;
+
+	move("U47", x, y);
+	move("C41", x + 3, y - 1);
+
+	addVia("GND", x - 2, y);
+	addVia("GND", x, y - 1.5);
+	addVia("GND", x + 1, y + 1.5);
+	addVia("GND", x + 2, y + 0.5);
+	addVia("GND", x + 3.5, y + 0.5);
+
+	addVia("3.3V", x + 1, y - 1.5);
+}
+
+void arrangePumpSwitchesPart2() {
+	int i;
+	real x;
+	real y;
+
+	x = 21.1;
+	y = 23.775;
+
+	for (i = 0; i < 2; ++i) {
+		for (int j = 0; j < 4; ++j) {
+			int qA = i * 8 + 7 + j;
+			int qB = i * 8 + 11 + j;
+			int rA = i * 12 + 80 + j;
+			int rB = i * 12 + 88 + j;
+
+			printf("*** %d, %d, Q%d, Q%d, R%d, R%d\n", i, j, qA, qB, rA, rB);
+
+// 			int level = (i * 4 + j) / 2;
+// 			y -= 8 * level;		
+
+			string part;
+
+			sprintf(part, "Q%d", qA);
+			move(part, x, y);
+			sprintf(part, "Q%d", qB);
+			move(part, x - 5.72, y + 0.74);
+			sprintf(part, "R%d", rA);
+			move(part, x - 5.22, y - 1.29);
+			sprintf(part, "R%d", rB);
+			move(part, x - 4.77, y + 3.27);
+			
+			x += 16;
+		}
+	}
+}
+
+void arrangePressureSensor() {
+	rotate("C40", 90);
+	move("C40", 8, 83.5);
+	
+	rotate("R150", 270);
+	move("R150", 8, 81);
+
+	rotate("R151", 90);
+	move("R151", 8, 78.5);
+
+	addVia("GND", 8, 85);
+	addVia("GND", 8, 77);
+	
+	rotate("C38", 90);
+	move("C38", 8, 68.5);
+	addVia("GND", 8, 62.5);
+
+	rotate("C39", 90);
+	move("C39", 8, 57.5);
+	addVia("GND", 8, 51.5);
+	
+	rotate("C42", 180);
+	move("C42", 126.5, 16);
+	addVia("GND", 124.5, 16);
+}

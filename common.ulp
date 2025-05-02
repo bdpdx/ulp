@@ -1,0 +1,607 @@
+#usage "Commonly used ULP methods"
+
+#include "stringUtilities.ulp"
+
+/* move a group:
+	select elements
+	MOVE (>0 0) (0 -40);
+*/
+
+real boardLowerLeftX = 0;
+real boardLowerLeftY = 0;
+real boardUpperRightX = 0;
+real boardUpperRightY = 0;
+real boardHeight = 0;
+real boardWidth = 0;
+real defaultViaDrillSize = 0.35;
+// https://www.protoexpress.com/tools/via-current-capacity-temperature-rise-calculator/
+// The thickness of the copper plating is 18 µm (JLCPCB)
+// Board thickness 6-layer is 1.6mm
+// According to calculator @ 130F a 0.8mm drill via can carry ~3.7A
+real powerViaDrillSize = 0.8;
+
+// JLCPCB specs:
+real minimumAnnularRingWidth1OzCopper = 0.13;
+real minimumAnnularRingWidth2OzCopper = 0.2;
+real minimumAnnularRingWidthForPlatedThroughHole = 0.3;
+// using minimum PTH for minimum annular ring width as it the max of all three options
+real minimumAnnularRingWidth = 0.3;
+real minimumBoardEdgeMargin = 0.5;
+real minimumDistanceBetweenPadAndSilkscreen = 0.15;
+real minimumLineWidth = 0.153;	// JLCPCB minimum line width is 0.153
+real minimumPadToPadClearance = 0.127;
+real minimumTextHeight = 1.0;	// JLCPCB minimum text height is 0.8, but 1.0 is barely legible
+real textHeightUnitsPerWidthUnit = 6;
+real jlcpcbViaCopperPlatingThickness = 18; // The thickness of the copper plating is 18 µm
+
+string cmd = "";
+string exitCommands = "";
+
+void addCommand(string c) {
+	exitCommands += c + ";";
+}
+
+string allBoardElementNamesSeparatedByNewline() {
+	string result = "";
+	
+	project.board(b) {
+		b.elements(e) {
+			result += e.name + '\n';
+		}
+	}
+	
+	return result;
+}
+
+void change(string parameter, real value) {
+	sprintf(cmd, "change %s %0.03f", parameter, value);
+	addCommand(cmd);
+}
+
+real ceilingTo(real number, real roundTo) {
+	return roundTo == 0 ? number : ceil(number / roundTo) * roundTo;
+}
+
+real floorTo(real number, real roundTo) {
+	return roundTo == 0 ? number : floor(number / roundTo) * roundTo;
+}
+
+real distance(real x1, real y1, real x2, real y2) {
+	real x2MinusX1 = x2 - x1;
+	real y2MinusY1 = y2 - y1;
+	real x2MinusX1Squared = x2MinusX1 * x2MinusX1;
+	real y2MinusY1Squared = y2MinusY1 * y2MinusY1;
+
+	return sqrt(x2MinusX1Squared + y2MinusY1Squared);
+}
+
+void editBoard() {
+	addCommand("edit .brd");
+}
+
+void editSchematic() {
+	addCommand("edit .sch");
+}
+
+real milToMm(real mil) {
+	return mil * 0.0254;
+}
+
+real mmToMil(real mm) {
+	return mm / 0.0254;
+}
+
+string partNamesWithPrefixInRangeSeparatedByNewline(string prefix, int from, int toInclusive) {
+	string parts = "";
+
+	for (int i = from; i <= toInclusive; ++i) {
+		sprintf(parts, "%s%s%d\n", parts, prefix, i);
+	}
+
+	return parts;
+}
+
+string point(real x, real y) {
+	string result;
+	sprintf(result, "(%0.03f %0.03f)", x, y);
+	return result;
+}
+
+string u2mmPoint(int x, int y) {
+	return point(u2mm(x), u2mm(y));
+}
+
+void move(string partName, real toX, real toY) {
+	sprintf(cmd, "move %s %s", partName, point(toX, toY));
+	addCommand(cmd);
+}
+
+void moveFrom(real fromX, real fromY, real toX, real toY) {
+	sprintf(cmd, "move %s %s", point(fromX, fromY), point(toX, toY));
+	addCommand(cmd);
+}
+
+void moveFromU2mm(int fromX, int fromY, real toX, real toY) {
+	moveFrom(u2mm(fromX), u2mm(fromY), toX, toY);
+}
+
+void drawCircle(real lineWidth, real centerX, real centerY, real radius) {
+	sprintf(cmd, "circle %0.3f %s %s", lineWidth, point(centerX, centerY), point(centerX + radius, centerY));
+	addCommand(cmd);
+}
+
+void drawFilledCircle(real centerX, real centerY, real radius) {
+	sprintf(cmd, "circle 0 %s %s", point(centerX, centerY), point(centerX + radius, centerY));
+	addCommand(cmd);
+}
+
+void drawStyledLine(real lineWidth, string style, real fromX, real fromY, real toX, real toY) {
+	sprintf(cmd, "line %0.03f %s %s %s", lineWidth, style, point(fromX, fromY), point(toX, toY));
+	addCommand(cmd);
+}
+
+void drawLine(real lineWidth, real fromX, real fromY, real toX, real toY) {
+	drawStyledLine(lineWidth, "flat", fromX, fromY, toX, toY);
+}
+
+void drawRectangle(real upperLeftX, real upperLeftY, real lowerRightX, real lowerRightY, real lineWidth) {
+	drawLine(lineWidth, upperLeftX, upperLeftY, lowerRightX, upperLeftY);
+	drawLine(lineWidth, lowerRightX, upperLeftY, lowerRightX, lowerRightY);
+	drawLine(lineWidth, lowerRightX, lowerRightY, upperLeftX, lowerRightY);
+	drawLine(lineWidth, upperLeftX, lowerRightY, upperLeftX, upperLeftY);
+}
+
+void drawRoundedRectangle(real upperLeftX, real upperLeftY, real lowerRightX, real lowerRightY, real cornerRadius, real lineWidth) {
+	real x1 = upperLeftX + cornerRadius;
+	real y1 = upperLeftY;
+	real x2 = lowerRightX - cornerRadius;
+	real y2 = y1;
+	
+	drawStyledLine(lineWidth, "round", x1, y1, x2, y2);
+	
+	x1 = lowerRightX;
+	y1 -= cornerRadius;
+	
+	drawStyledLine(lineWidth, "round", x2, y2, x1, y1);
+
+	x2 = lowerRightX;
+	y2 = lowerRightY + cornerRadius;
+	
+	drawStyledLine(lineWidth, "round", x1, y1, x2, y2);
+
+	x1 = lowerRightX - cornerRadius;
+	y1 = lowerRightY;
+	
+	drawStyledLine(lineWidth, "round", x2, y2, x1, y1);
+
+	x2 = upperLeftX + cornerRadius;
+	y2 = lowerRightY;
+	
+	drawStyledLine(lineWidth, "round", x1, y1, x2, y2);
+
+	x1 = upperLeftX;
+	y1 = lowerRightY + cornerRadius;
+	
+	drawStyledLine(lineWidth, "round", x2, y2, x1, y1);
+
+	x2 = upperLeftX;
+	y2 = upperLeftY - cornerRadius;
+	
+	drawStyledLine(lineWidth, "round", x1, y1, x2, y2);
+
+	x1 = upperLeftX + cornerRadius;
+	y1 = upperLeftY;
+	
+	drawStyledLine(lineWidth, "round", x2, y2, x1, y1);
+}
+
+string gridUnitToString(int unit) {
+	string result = "";
+
+	switch (unit) {
+		case GRID_UNIT_MIC:		result = "microns";		break;
+		case GRID_UNIT_MIL:		result = "mil";			break;
+		case GRID_UNIT_MM:		result = "mm";			break;
+		case GRID_UNIT_INCH:	result = "inch";		break;
+	}
+
+	return result;
+}
+
+void getBoardInfo(UL_BOARD b, int isLoggingEnabled) {
+	real lowerLeftX = REAL_MAX;
+	real lowerLeftY = REAL_MAX;
+	real upperRightX = REAL_MIN;
+	real upperRightY = REAL_MIN;
+	
+	// find board boundary
+	b.wires(w) {
+		if (w.layer != LAYER_DIMENSION) continue;
+		
+		lowerLeftX = min(lowerLeftX, u2mm(w.x1));
+		lowerLeftX = min(lowerLeftX, u2mm(w.x2));
+		lowerLeftY = min(lowerLeftY, u2mm(w.y1));
+		lowerLeftY = min(lowerLeftY, u2mm(w.y2));
+		upperRightX = max(upperRightX, u2mm(w.x1));
+		upperRightX = max(upperRightX, u2mm(w.x2));
+		upperRightY = max(upperRightY, u2mm(w.y1));
+		upperRightY = max(upperRightY, u2mm(w.y2));
+	}
+	
+	real height = upperRightY - lowerLeftY;
+	real width = upperRightX - lowerLeftX;
+	
+	if (width > 0 && height > 0) {
+		boardLowerLeftX = lowerLeftX;
+		boardLowerLeftY = lowerLeftY;
+		boardUpperRightX = upperRightX;
+		boardUpperRightY = upperRightY;
+		boardHeight = height;
+		boardWidth = width;
+	}
+
+	string alwaysVectorFontAttributes = "";
+
+	if (b.alwaysvectorfont & ALWAYS_VECTOR_FONT_GUI) {
+		alwaysVectorFontAttributes += "ALWAYS_VECTOR_FONT_GUI";
+	}
+	if (b.alwaysvectorfont & ALWAYS_VECTOR_FONT_PERSISTENT) {
+		if (strlen(alwaysVectorFontAttributes) > 0) {
+			alwaysVectorFontAttributes += ", ";
+		}
+		alwaysVectorFontAttributes += "ALWAYS_VECTOR_FONT_PERSISTENT";
+	}
+
+	if (isLoggingEnabled) {
+		printf("board info\n");
+		printf("  alwaysvectorfont: " + alwaysVectorFontAttributes + "\n");
+		printf("  area lower left %s, upper right %s\n", u2mmPoint(b.area.x1, b.area.y1), u2mmPoint(b.area.x2, b.area.y2));
+		printf("  board width %0.02f x height %0.02f mm\n", u2mm(b.area.x2) - u2mm(b.area.x1), u2mm(b.area.y2) - u2mm(b.area.y1));
+		printf("  grid %s size %0.02f %s\n", b.grid.on ? "on" : "off", b.grid.distance, gridUnitToString(b.grid.unit));
+		printf("  checked: %d\n", b.checked);
+		printf("  description: " + b.description + "\n");
+		printf("  headline: " + b.headline + "\n");
+		printf("  name: " + b.name + "\n");
+		printf("  dimensioned area %s %s, w: %0.02f x h: %0.02f\n", point(lowerLeftX, lowerLeftY), point(upperRightX, upperRightY), width, height);
+	}
+}
+
+string alignToString(int align) {
+	string result;
+	
+	switch (align) {
+		case ALIGN_BOTTOM_LEFT:		result = "bottom-left";			break;
+		case ALIGN_BOTTOM_CENTER:	result = "bottom-center";		break;
+		case ALIGN_BOTTOM_RIGHT: 	result = "bottom-right";		break;
+		case ALIGN_CENTER_LEFT: 	result = "center-left";			break;
+		case ALIGN_CENTER: 			result = "center";				break;
+		case ALIGN_CENTER_RIGHT: 	result = "center-right";		break;
+		case ALIGN_TOP_LEFT: 		result = "top-left";			break;
+		case ALIGN_TOP_CENTER: 		result = "top-center";			break;
+		case ALIGN_TOP_RIGHT: 		result = "top-right";			break;
+		default:					result = "unknown-align";		break;
+	}
+	
+	return result;
+}
+
+string layerToString(int layerNumber) {
+	string result;
+
+	switch (layerNumber) {
+		case LAYER_TOP:				result = "LAYER_TOP";			break;
+		case LAYER_BOTTOM:			result = "LAYER_BOTTOM";		break;
+		case LAYER_PADS:			result = "LAYER_PADS";			break;
+		case LAYER_VIAS:			result = "LAYER_VIAS";			break;
+		case LAYER_UNROUTED:		result = "LAYER_UNROUTED";		break;
+		case LAYER_DIMENSION:		result = "LAYER_DIMENSION";		break;
+		case LAYER_TPLACE:			result = "LAYER_TPLACE";		break;
+		case LAYER_BPLACE:			result = "LAYER_BPLACE";		break;
+		case LAYER_TORIGINS:		result = "LAYER_TORIGINS";		break;
+		case LAYER_BORIGINS:		result = "LAYER_BORIGINS";		break;
+		case LAYER_TNAMES:			result = "LAYER_TNAMES";		break;
+		case LAYER_BNAMES:			result = "LAYER_BNAMES";		break;
+		case LAYER_TVALUES:			result = "LAYER_TVALUES";		break;
+		case LAYER_BVALUES:			result = "LAYER_BVALUES";		break;
+		case LAYER_TSTOP:			result = "LAYER_TSTOP";			break;
+		case LAYER_BSTOP:			result = "LAYER_BSTOP";			break;
+		case LAYER_TCREAM:			result = "LAYER_TCREAM";		break;
+		case LAYER_BCREAM:			result = "LAYER_BCREAM";		break;
+		case LAYER_TFINISH:			result = "LAYER_TFINISH";		break;
+		case LAYER_BFINISH:			result = "LAYER_BFINISH";		break;
+		case LAYER_TGLUE:			result = "LAYER_TGLUE";			break;
+		case LAYER_BGLUE:			result = "LAYER_BGLUE";			break;
+		case LAYER_TTEST:			result = "LAYER_TTEST";			break;
+		case LAYER_BTEST:			result = "LAYER_BTEST";			break;
+		case LAYER_TKEEPOUT:		result = "LAYER_TKEEPOUT";		break;
+		case LAYER_BKEEPOUT:		result = "LAYER_BKEEPOUT";		break;
+		case LAYER_TRESTRICT:		result = "LAYER_TRESTRICT";		break;
+		case LAYER_BRESTRICT:		result = "LAYER_BRESTRICT";		break;
+		case LAYER_VRESTRICT:		result = "LAYER_VRESTRICT";		break;
+		case LAYER_DRILLS:			result = "LAYER_DRILLS";		break;
+		case LAYER_HOLES:			result = "LAYER_HOLES";			break;
+		case LAYER_MILLING:			result = "LAYER_MILLING";		break;
+		case LAYER_MEASURES:		result = "LAYER_MEASURES";		break;
+		case LAYER_DOCUMENT:		result = "LAYER_DOCUMENT";		break;
+		case LAYER_REFERENCE:		result = "LAYER_REFERENCE";		break;
+		case LAYER_TDOCU:			result = "LAYER_TDOCU";			break;
+		case LAYER_BDOCU:			result = "LAYER_BDOCU";			break;
+		case LAYER_NETS:			result = "LAYER_NETS";			break;
+		case LAYER_BUSSES:			result = "LAYER_BUSSES";		break;
+		case LAYER_PINS:			result = "LAYER_PINS";			break;
+		case LAYER_SYMBOLS:			result = "LAYER_SYMBOLS";		break;
+		case LAYER_NAMES:			result = "LAYER_NAMES";			break;
+		case LAYER_VALUES:			result = "LAYER_VALUES";		break;
+		case LAYER_INFO:			result = "LAYER_INFO";			break;
+		case LAYER_GUIDE:			result = "LAYER_GUIDE";			break;
+		case LAYER_USER:			result = "LAYER_USER";			break;
+		default:					result = "UNKNOWN_LAYER";		break;
+	}
+
+	return result;
+}
+
+int boardLayerNameToNumber(string layerName) {
+	int n = -1;
+
+	board(b) {
+		b.layers(l) {
+			if (!strcmp(l.name, layerName)) {
+				n = l.number;
+				break;
+			}
+		}
+	}
+	
+	if (n == -1) {
+		printf("layer '" + layerName + "' not found\n");
+	}
+
+	return n;
+}
+
+void printDimension(UL_DIMENSION d, string prefix) {
+	printf("%s%s %s %s\n", prefix, u2mmPoint(d.x1, d.y1), u2mmPoint(d.x2, d.y2), u2mmPoint(d.x3, d.y3));
+}
+
+void printWire(UL_WIRE w, string prefix) {
+	printf("%swire from %s to %s on layer %s\n", prefix, u2mmPoint(w.x1, w.y1), u2mmPoint(w.x2, w.y2), layerToString(w.layer));
+}
+
+void printSchematicInfo(UL_SCHEMATIC sch) {
+	string alwaysVectorFontAttributes = "";
+
+	if (sch.alwaysvectorfont & ALWAYS_VECTOR_FONT_GUI) {
+		alwaysVectorFontAttributes += "ALWAYS_VECTOR_FONT_GUI";
+	}
+	if (sch.alwaysvectorfont & ALWAYS_VECTOR_FONT_PERSISTENT) {
+		if (strlen(alwaysVectorFontAttributes) > 0) {
+			alwaysVectorFontAttributes += ", ";
+		}
+		alwaysVectorFontAttributes += "ALWAYS_VECTOR_FONT_PERSISTENT";
+	}
+		
+	printf("schematic info\n");
+	printf("  alwaysvectorfont: " + alwaysVectorFontAttributes + "\n");
+	printf("  checked: %d\n", sch.checked);
+	printf("  description: " + sch.description + "\n");
+	printf("  headline: " + sch.headline + "\n");
+	printf("  name: " + sch.name + "\n\n");
+}
+
+void repositionParts(string partNamesSeparatedByNewline) {
+	int partCount;
+	string partNames[];
+
+	if ((partCount = strsplit(partNames, partNamesSeparatedByNewline, '\n')) < 1) return;
+
+	for (int i = 0; i < partCount; ++i) {
+		sprintf(cmd, "reposition %s", partNames[i]);
+		addCommand(cmd);
+	}
+}
+
+void rotate(string partName, real rotation) {
+	sprintf(cmd, "rotate =R%0.01f '%s'", rotation, partName);
+	addCommand(cmd);
+}
+
+void rotateParts(string partNamesSeparatedByNewline, real rotation) {
+	int partCount;
+	string partNames[];
+
+	if ((partCount = strsplit(partNames, partNamesSeparatedByNewline, '\n')) < 1) return;
+
+	for (int i = 0; i < partCount; ++i) {
+		rotate(partNames[i], rotation);
+	}
+}
+
+void selectLayer(int layerNumber) {
+	sprintf(cmd, "layer %d", layerNumber);
+	addCommand(cmd);
+}
+
+void setLayerVisible(int layerNumber, int isVisible) {
+	sprintf(cmd, "display %s%d", isVisible ? "" : "-", layerNumber);
+	addCommand(cmd);
+}
+
+void hideLayer(int layerNumber) {
+	setLayerVisible(layerNumber, 0);
+}
+
+void showLayer(int layerNumber) {
+	setLayerVisible(layerNumber, 1);
+}
+
+void showSheet(int sheetNumber) {
+	sprintf(cmd, "edit .s%d", sheetNumber);
+	addCommand(cmd);
+}
+
+UL_ELEMENT findBoardPartNamed(string name) {
+	UL_ELEMENT part;
+
+	if (project.board) {	
+		project.board(b) {
+			b.elements(e) {
+				if (!strcmp(e.name, name)) return e;
+			}
+		}
+	}
+	
+	return part;
+}
+
+UL_PART findSchematicPartNamed(string name) {
+	UL_PART part;
+	
+	if (project.schematic) {
+		project.schematic(s) {
+			s.allparts(p) {
+				if (!strcmp(p.name, name)) return p;
+			}
+		}
+	}	
+	
+	return part;
+}
+
+UL_TEXT findNameLabelForPartNamed(string name) {
+	UL_ELEMENT e = findBoardPartNamed(name);
+	
+	e.texts(t) {
+		if (t.layer == LAYER_TNAMES) return t;
+	}
+}
+
+UL_TEXT findValueLabelForPartNamed(string name) {
+	UL_ELEMENT e = findBoardPartNamed(name);
+
+	e.texts(t) {
+		if (t.layer == LAYER_TVALUES) return t;
+	}
+}
+
+void movePartsToGrid(string partNamesSeparatedByNewline, int columns, real startX, real startY, real xOffset, real yOffset) {
+	int partCount;
+	string partNames[];
+
+	if ((partCount = strsplit(partNames, partNamesSeparatedByNewline, '\n')) < 1) return;
+
+	printf("moving %d parts into grid\n", partCount);	
+
+	for (int i = 0; i < partCount; ++i) {
+		string partName = partNames[i];
+		UL_ELEMENT e = findBoardPartNamed(partName);
+
+		real newX = startX + xOffset * (i % columns);
+		real newY = startY + yOffset * (i / columns);
+		real oldX = u2mm(e.x);
+		real oldY = u2mm(e.y);
+		
+		if (oldX == newX && oldY == newY) continue;
+
+		sprintf(cmd, "move %s %s", partName, point(newX, newY));
+		addCommand(cmd);
+	}
+}
+
+string decodeNameIntoPartPrefixAndIndexSuffix(string name) {
+	int length;
+	int n = strxstr(name, "^[^0-9]+", 0, length);
+	
+	string partPrefix = strsub(name, n, length);
+	string indexSuffix = strsub(name, n + length);
+	
+	return partPrefix + "," + indexSuffix;
+}
+
+string partPrefix(string name) {
+	int length;
+	int n = strxstr(name, "^[^0-9]+", 0, length);
+	
+	return strsub(name, n, length);
+}
+
+void setGrid(int showLines, string unit, real majorDivision, real minorDivision) {
+	sprintf(cmd, "grid lines %s %s %0.02f 1 alt %0.02f %s", showLines ? "on" : "off", unit, majorDivision, minorDivision, unit);
+	addCommand(cmd);
+}
+
+void Exit() {
+	string strings[];
+
+	if (strlen(exitCommands) > 0) {
+		printf("exitCommands:\n");
+
+		int n = strsplit(strings, exitCommands, ';');
+
+		for (int i = 0; i < n; ++i) {
+			if (strlen(strings[i]) < 1) continue;
+			printf("%s\n", strings[i]);
+		}
+	}
+	
+	exit(exitCommands);
+}
+
+void deleteLayerContents(int layerNumber) {
+	sprintf(cmd, "display none %d", layerNumber);
+	addCommand(cmd);
+	addCommand("group all");
+	addCommand("delete (>0 0)");
+	addCommand("display last");
+}
+
+void deleteBoardLayer(string layerName) {
+	int layerNumber = boardLayerNameToNumber(layerName);
+
+	if (layerNumber == -1) {
+		printf("layer '" + layerName + "' not found\n");
+		return;
+	}
+
+	deleteLayerContents(layerNumber);
+
+	sprintf(cmd, "layer -%d", layerNumber);
+	addCommand(cmd);
+}
+
+void addViaWithDrillSize(string signalName, real drillSize, real x, real y) {
+	sprintf(cmd, "change drill %0.3f", drillSize);
+	addCommand(cmd);
+	sprintf(cmd, "via '%s' %s", signalName, point(x, y));
+	addCommand(cmd);
+}
+
+void addPowerVia(string signalName, real x, real y) {
+	addViaWithDrillSize(signalName, powerViaDrillSize, x, y);
+}
+
+void addVia(string signalName, real x, real y) {
+	addViaWithDrillSize(signalName, defaultViaDrillSize, x, y);
+}
+
+// brian's parts
+void swap0402Label(string part) {
+	UL_ELEMENT e = findBoardPartNamed(part);
+	e.texts(t) {
+		if (t.layer == LAYER_TNAMES) {
+			sprintf(cmd, "change align top-center %s", u2mmPoint(t.x, t.y));
+			addCommand(cmd);
+			moveFromU2mm(t.x, t.y, u2mm(t.x), u2mm(t.y) - 1.3);
+		}
+	}
+}
+void swap0603Label(string part) {
+	UL_ELEMENT e = findBoardPartNamed(part);
+	e.texts(t) {
+		if (t.layer == LAYER_TNAMES) {
+			sprintf(cmd, "change align top-center %s", u2mmPoint(t.x, t.y));
+			addCommand(cmd);
+			moveFromU2mm(t.x, t.y, u2mm(t.x), u2mm(t.y) - 1.4);
+		}
+	}
+}

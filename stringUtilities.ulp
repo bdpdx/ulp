@@ -1,0 +1,30 @@
+#usage "String Utilities ULP"
+
+int strncmp(string lhs, string rhs, int n) {
+	int i = 0;
+	int lhsLen = strlen(lhs);
+	int rhsLen = strlen(rhs);
+	
+	if (n >= 0) {
+		lhsLen = min(n, lhsLen);
+		rhsLen = min(n, rhsLen);
+	}
+	
+	while (1) {
+		int lhsRemaining = lhsLen - i;
+		int rhsRemaining = rhsLen - i;
+	
+		if (lhsRemaining == 0 && rhsRemaining == 0) return 0;
+		if (lhsRemaining == 0) return -1;
+		if (rhsRemaining == 0) return 1;
+		
+		if (lhs[i] < rhs[i]) return -1;
+		if (lhs[i] > rhs[i]) return 1;
+
+		++i;
+	}
+}
+
+int strcmp(string lhs, string rhs) {
+	return strncmp(lhs, rhs, -1);
+}
